@@ -301,11 +301,14 @@ export async function fillIndividualMiniCard(
   draft: IndividualDraft,
 ): Promise<void> {
   const card = miniCard(page);
+  const lastNameInput = card.locator('input.Name-Input__field_lastName');
 
-  await card.locator('.Name-Input__field_lastName').fill(draft.lastName);
-  await card.locator('.Name-Input__field_firstName').fill(draft.firstName);
+  // В момент открытия мини-карточки вместо input может быть span-плейсхолдер.
+  await expect(lastNameInput).toBeVisible({ timeout: 30_000 });
+  await lastNameInput.fill(draft.lastName);
+  await card.locator('input.Name-Input__field_firstName').fill(draft.firstName);
   if (draft.middleName) {
-    await card.locator('.Name-Input__field_middleName').fill(draft.middleName);
+    await card.locator('input.Name-Input__field_middleName').fill(draft.middleName);
   }
 
   await card.locator('.cd-MultipleInput__field_Value input').fill(draft.phone);

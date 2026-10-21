@@ -11,3 +11,9 @@
 .controls-DecoratorNumber {
   visibility: hidden !important;
 }
+
+/* Онбординг-подсказка в пустом списке ролей может рендериться за пределами
+   видимой области или появляться с задержкой. Для эталонного скриншота она не нужна. */
+.Hint-ListWrapper_hintWrapper {
+  visibility: hidden !important;
+}

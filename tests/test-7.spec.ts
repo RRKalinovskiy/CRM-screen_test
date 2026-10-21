@@ -33,22 +33,43 @@ async function clickFilter(page: Page, label: string): Promise<void> {
   await page.getByText(label, { exact: true }).filter({ visible: true }).first().click();
 }
 
-async function fillContactSearch(page: Page, query: string): Promise<void> {
-  const search = page.getByPlaceholder('\uFEFF').filter({ visible: true }).first();
-  await expect(search).toBeVisible();
-
-  // Поле поиска может перерисоваться сразу после загрузки страницы.
-  // Повторяем ввод, пока значение действительно не закрепится в поле.
+async function filterContactsBySearch(
+  page: Page,
+  query: string,
+  visibleNames: string[],
+  hiddenNames: string[] = [],
+): Promise<void> {
+  // Поле поиска и список могут перерисоваться после загрузки страницы.
+  // Повторяем ввод, пока не получим именно ожидаемый результат фильтрации.
   await expect
     .poll(
       async () => {
-        await search.fill(query);
-        await page.waitForTimeout(200);
-        return search.inputValue();
+        const search = page.getByPlaceholder('\uFEFF').filter({ visible: true }).first();
+        if ((await search.count()) === 0) {
+          return false;
+        }
+
+        await search.fill(query).catch(() => undefined);
+        await page.waitForTimeout(500);
+        if ((await search.inputValue().catch(() => '')) !== query) {
+          return false;
+        }
+
+        const visible = await Promise.all(
+          visibleNames.map(async (name) => person(page, name).isVisible().catch(() => false)),
+        );
+        const hidden = await Promise.all(
+          hiddenNames.map(async (name) => !(await person(page, name).isVisible().catch(() => true))),
+        );
+
+        return visible.every(Boolean) && hidden.every(Boolean);
       },
-      { timeout: 10_000, message: `Не удалось ввести поисковый запрос «${query}»` },
+      {
+        timeout: 30_000,
+        message: `Поиск «${query}» не привёл к ожидаемому списку контактов`,
+      },
     )
-    .toBe(query);
+    .toBe(true);
 }
 
 async function expectContactsVisible(page: Page, names: string[]): Promise<void> {
@@ -100,17 +121,23 @@ test.describe('Реестр «Контактные лица»', () => {
     // После первичной отрисовки Saby может пересоздать поле поиска.
     await page.waitForTimeout(2_000);
 
-    await fillContactSearch(page, 'Сизов');
-    await expect(person(page, 'Сизов Виктор Генадьевич')).toBeVisible();
-    await expectContactsHidden(page, ['Горохов Евгений Олегович', 'Тестов Винамин']);
-
-    await fillContactSearch(page, 'Горохов');
-    await expect(person(page, 'Горохов Евгений Олегович')).toBeVisible();
-    await expectContactsHidden(page, ['Сизов Виктор Генадьевич', 'Тестов Винамин']);
-
-    await fillContactSearch(page, '');
-    await expectContactsVisible(
+    await filterContactsBySearch(
       page,
+      'Сизов',
+      ['Сизов Виктор Генадьевич'],
+      ['Горохов Евгений Олегович', 'Тестов Винамин'],
+    );
+
+    await filterContactsBySearch(
+      page,
+      'Горохов',
+      ['Горохов Евгений Олегович'],
+      ['Сизов Виктор Генадьевич', 'Тестов Винамин'],
+    );
+
+    await filterContactsBySearch(
+      page,
+      '',
       contacts.map((contact) => contact.name),
     );
   });
