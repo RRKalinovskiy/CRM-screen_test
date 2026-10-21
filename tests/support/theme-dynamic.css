@@ -1,0 +1,13 @@
+/* Динамические элементы карточки темы, которые скрываются на время скриншота. */
+[name="tabcrm-leads"] .NavigationPanels-Counter__default,
+[name="tabcrm-leads"] .NavigationPanels-Counter__new {
+  visibility: hidden !important;
+}
+
+.controls-FilterView__wrapper {
+  visibility: hidden !important;
+}
+
+.controls-DecoratorNumber {
+  visibility: hidden !important;
+}
