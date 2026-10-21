@@ -550,7 +550,9 @@ export async function openFilledIndividualCard(
   await expect(person).toBeVisible({ timeout: 30_000 });
   await person.click();
 
-  await expect(page.locator('.crm_IndividualCard__tabsArea')).toBeVisible();
+  // На GitHub-hosted раннере карточка после клика может грузиться заметно
+  // дольше стандартных 10 секунд (виден индикатор «Загрузка»).
+  await expect(page.locator('.crm_IndividualCard__tabsArea')).toBeVisible({ timeout: 30_000 });
   await expect(cardBody(page)).toBeVisible();
   await expect(cardBody(page)).toContainText(CARD_READY);
 }

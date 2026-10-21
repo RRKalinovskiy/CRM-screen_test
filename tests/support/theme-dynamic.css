@@ -17,3 +17,9 @@
 .Hint-ListWrapper_hintWrapper {
   visibility: hidden !important;
 }
+
+/* Плейсхолдер пустого rich-text редактора подгружается асинхронно
+   и на медленном раннере может не попасть в кадр. */
+.frameControls-Placeholder {
+  visibility: hidden !important;
+}
