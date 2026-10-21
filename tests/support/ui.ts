@@ -85,6 +85,12 @@ export async function openThemeSection(page: Page, section: string): Promise<voi
   const markerLocator =
     typeof marker === 'string' ? page.getByText(marker, { exact: true }) : page.getByText(marker);
   await expect(markerLocator.first()).toBeVisible({ timeout: 30_000 });
+
+  // Пустой rich-text редактор инструкции подгружается отдельно от заголовка.
+  // Ждём плейсхолдер, чтобы его скрытие не сдвигало иллюстрацию на скриншоте.
+  if (section === 'Инструкция') {
+    await expect(page.locator('.frameControls-Placeholder').first()).toBeAttached({ timeout: 30_000 });
+  }
 }
 
 export async function expectThemeScreenshot(page: Page, name: string): Promise<void> {
@@ -621,7 +627,9 @@ export async function openBusinessCard(page: Page): Promise<void> {
   await expect(person).toBeVisible({ timeout: 30_000 });
   await person.click();
 
-  await expect(miniCardDialog(page)).toBeVisible();
+  // На GitHub-hosted раннере визитка после клика может открываться
+  // заметно дольше стандартных 10 секунд.
+  await expect(miniCardDialog(page)).toBeVisible({ timeout: 30_000 });
   await waitForStableSize(miniCardDialog(page), page);
   await expect(miniCardDialog(page).getByText('Паспорт', { exact: true })).toBeVisible();
 }
