@@ -11,6 +11,7 @@ import {
   openContacts,
   openFullIndividualCard,
   saveFullIndividualCard,
+  selectIndividualTab,
   saveMiniIndividualCard,
   type IndividualDraft,
 } from './support/ui';
@@ -65,6 +66,9 @@ test.describe('Карточка ФЛ — создание и редактиро�
     await saveMiniIndividualCard(page);
 
     await openContactByQuery(page, draft.lastName);
+    // Карточка может открыться на последней использованной вкладке —
+    // паспортные данные и примечание находятся на «Параметрах».
+    await selectIndividualTab(page, 'tabparams');
 
     const body = cardBody(page);
     for (const value of [
@@ -93,6 +97,7 @@ test.describe('Карточка ФЛ — создание и редактиро�
     // Повторный заход в карточку подтверждает, что изменение сохранилось.
     await openContacts(page);
     await openContactByQuery(page, draft.lastName);
+    await selectIndividualTab(page, 'tabparams');
     await expect(
       page.getByText(fullNote, { exact: true }).filter({ visible: true }).first(),
     ).toBeVisible();
@@ -144,6 +149,7 @@ test.describe('Карточка ФЛ — создание и редактиро�
     // Повторно открываем карточку из реестра — данные должны сохраниться.
     await openContacts(page);
     await openContactByQuery(page, draft.lastName);
+    await selectIndividualTab(page, 'tabparams');
     for (const value of expected) {
       await expect(cardBody(page)).toContainText(value!);
     }
