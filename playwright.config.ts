@@ -14,7 +14,11 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 1,
   workers: process.env.CI ? 1 : 2,
   timeout: 60_000,
-  reporter: [['list'], ['html', { open: 'never' }]],
+  // В CI дополнительно включаем github-reporter: ошибки попадают
+  // в аннотации GitHub Actions, а не только в HTML-отчёт.
+  reporter: process.env.CI
+    ? [['list'], ['github'], ['html', { open: 'never' }]]
+    : [['list'], ['html', { open: 'never' }]],
 
   globalSetup: './tests/support/global-setup.ts',
 

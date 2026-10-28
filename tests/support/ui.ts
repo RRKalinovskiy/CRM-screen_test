@@ -17,15 +17,20 @@ export const miniCardDialog = (page: Page): Locator =>
   page.locator('.PersonCard-MiniCard__dialog');
 
 export async function openWorkspace(page: Page, url: string): Promise<void> {
+  console.log(`[ui] открываю: ${url}`);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+  console.log(`[ui] URL после навигации: ${page.url()}`);
 
   // Сессия могла истечь во время длинного прогона — повторно логинимся.
   if (page.url().includes('fix-sso.saby.ru')) {
+    console.warn('[ui] сессия истекла, повторный вход');
     await login(page);
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+    console.log(`[ui] URL после повторного входа: ${page.url()}`);
   }
 
   await expect(workspace(page)).toBeVisible({ timeout: 90_000 });
+  console.log(`[ui] рабочая область открыта: ${page.url()}`);
   await dismissNotifications(page);
 }
 
@@ -490,11 +495,23 @@ export async function editFullIndividualCardNote(page: Page, note: string): Prom
 
 /** Удаляет открытую в полной карточке запись ФЛ. */
 export async function deleteCurrentIndividual(page: Page): Promise<void> {
-  await page.locator('[title="Удалить"]').filter({ visible: true }).first().click();
+  const deleteButton = page.locator('[title="Удалить"]').filter({ visible: true }).first();
   const popup = page.locator('.controls-Confirmation_popup').filter({ visible: true }).last();
-  await expect(popup).toContainText('Удалить текущую запись?');
-  await popup.getByText('Да', { exact: true }).filter({ visible: true }).first().click();
-  await expect(popup).toBeHidden({ timeout: 30_000 });
+
+  // В Saby клик по кнопке тулбара иногда «теряется», пока карточка
+  // инициализируется. Повторяем клик, пока не появится подтверждение.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await expect(deleteButton).toBeVisible();
+    await deleteButton.click();
+    try {
+      await expect(popup).toContainText('Удалить текущую запись?', { timeout: 4_000 });
+      await popup.getByText('Да', { exact: true }).filter({ visible: true }).first().click();
+      await expect(popup).toBeHidden({ timeout: 30_000 });
+      return;
+    } catch (error) {
+      if (attempt === 2) throw error;
+    }
+  }
 }
 
 /** Страховка для afterEach: удаляет созданный контакт по фамилии, если он остался. */
@@ -510,7 +527,18 @@ export async function deleteIndividualByQuery(page: Page, query: string): Promis
 
   await person.click();
   await expect(page.locator('.crm_IndividualCard__tabsArea')).toBeVisible({ timeout: 30_000 });
+  await expect(cardBody(page)).toBeVisible();
+  await expect(cardBody(page)).toContainText(CARD_READY);
   await deleteCurrentIndividual(page);
+
+  // Удаление на стенде применяется асинхронно: дожидаемся, пока строка
+  // исчезнет из реестра, иначе следующий переход увидит устаревший список.
+  await expect(page.locator('.crm_IndividualCard__tabsArea'))
+    .toBeHidden({ timeout: 30_000 })
+    .catch(() => undefined);
+  await expect(page.getByText(query, { exact: false }).filter({ visible: true })).toHaveCount(0, {
+    timeout: 60_000,
+  });
 }
 
 export type IndividualTab = 'tabparams' | 'tabpurchases' | 'tabactivity';
@@ -564,26 +592,20 @@ export async function openFilledIndividualCard(
 }
 
 /**
- * Копирует ссылку на уже открытую карточку ФЛ через меню «Ссылка/Поделиться».
- * Ссылка каждый раз берётся из живой карточки, а не задаётся в тесте.
+ * Копирует ссылку на уже открытую карточку ФЛ кнопкой «Ссылка/Поделиться».
+ *
+ * В актуальной версии Saby кнопка копирует ссылку сразу, без промежуточного
+ * меню «Скопировать». Ссылка каждый раз берётся из живой карточки.
  */
 export async function copyIndividualCardLink(page: Page): Promise<string> {
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   // Очищаем буфер, чтобы не прочитать ссылку от предыдущего кейса.
   await page.evaluate(() => navigator.clipboard.writeText(''));
 
-  await page
-    .locator('[title="Ссылка/Поделиться"]')
-    .filter({ visible: true })
-    .first()
-    .click();
-
-  const copyItem = page
-    .getByText('Скопировать', { exact: true })
-    .filter({ visible: true })
-    .first();
-  await expect(copyItem).toBeVisible();
-  await copyItem.click();
+  console.log('[ui] копирую ссылку кнопкой «Ссылка/Поделиться»');
+  const share = page.locator('[title="Ссылка/Поделиться"]').filter({ visible: true }).first();
+  await expect(share).toBeVisible();
+  await share.click();
 
   const readClipboard = async (): Promise<string> =>
     (await page.evaluate(() => navigator.clipboard.readText())).trim();
@@ -595,7 +617,38 @@ export async function copyIndividualCardLink(page: Page): Promise<string> {
     })
     .not.toBe('');
 
-  return readClipboard();
+  const link = await readClipboard();
+  console.log(`[ui] ссылка в буфере: ${link}`);
+  return link;
+}
+
+/**
+ * Открывает подменю карточки «Ссылка/Поделиться».
+ *
+ * В новой версии интерфейса кнопка на тулбаре копирует ссылку сразу,
+ * а команда «В новой вкладке» осталась в подменю меню карточки.
+ */
+export async function openIndividualCardShareMenu(page: Page): Promise<void> {
+  console.log('[ui] открываю меню карточки → «Ссылка/Поделиться»');
+  const menuButton = page.locator('[title="Открыть меню"]').filter({ visible: true }).first();
+  await expect(menuButton).toBeVisible();
+  await menuButton.click();
+
+  const menu = page.locator('.controls-Menu__popup').filter({ visible: true }).last();
+  await expect(menu).toBeVisible();
+
+  const shareItem = menu
+    .getByText('Ссылка/Поделиться', { exact: true })
+    .filter({ visible: true })
+    .first();
+  await expect(shareItem).toBeVisible();
+  await shareItem.hover();
+
+  const newTabItem = page
+    .getByText('В новой вкладке', { exact: true })
+    .filter({ visible: true })
+    .first();
+  await expect(newTabItem).toBeVisible();
 }
 
 /** Открывает карточку по ссылке в новой вкладке того же браузерного контекста. */
@@ -603,16 +656,19 @@ export async function openIndividualCardByLink(
   context: BrowserContext,
   link: string,
 ): Promise<Page> {
+  console.log(`[ui] открываю карточку по ссылке: ${link}`);
   const page = await context.newPage();
   await page.goto(link, { waitUntil: 'domcontentloaded', timeout: 90_000 });
 
   if (page.url().includes('fix-sso.saby.ru')) {
+    console.warn('[ui] сессия истекла при открытии ссылки, повторный вход');
     await login(page);
     await page.goto(link, { waitUntil: 'domcontentloaded', timeout: 90_000 });
   }
 
   await expect(page.locator('.crm_IndividualCard__tabsArea')).toBeVisible({ timeout: 90_000 });
   await expect(cardBody(page)).toBeVisible();
+  console.log(`[ui] карточка по ссылке открыта: ${page.url()}`);
   return page;
 }
 

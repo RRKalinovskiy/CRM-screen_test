@@ -6,6 +6,7 @@ import {
   openContacts,
   openFilledIndividualCard,
   openIndividualCardByLink,
+  openIndividualCardShareMenu,
 } from './support/ui';
 
 type Client = {
@@ -30,10 +31,20 @@ const clients: Client[] = [
   },
 ];
 
+function cardPath(link: string): string {
+  return new URL(link).pathname.replace(/\/+$/, '');
+}
+
+/**
+ * Актуальный маршрут карточки: /crm/individual/card/<id>.
+ * Идентификатор может быть коротким (NTI3) или длинным (UUID/base64),
+ * поэтому проверяем форму маршрута, а не конкретный набор символов.
+ */
 function expectLiveCardLink(link: string): void {
   const url = new URL(link);
   expect(url.origin).toBe(APP_ORIGIN);
-  expect(url.pathname).toMatch(/^\/crm\/individual\/card\/[A-Za-z0-9_-]+$/);
+  expect(url.pathname).toMatch(/^\/crm\/individual\/card\/[^/]+\/?$/);
+  console.log(`[test-6] ссылка на карточку: ${link}`);
 }
 
 async function openLiveCard(page: Page, client: Client): Promise<void> {
@@ -51,8 +62,9 @@ async function expectClientCard(page: Page, client: Client): Promise<void> {
 }
 
 /**
- * Ссылка каждый раз читается из открытой живой карточки через
- * «Ссылка/Поделиться» → «Скопировать», поэтому тест не зависит от
+ * Ссылка каждый раз читается из открытой живой карточки кнопкой
+ * «Ссылка/Поделиться»: в актуальной версии Saby она копирует ссылку сразу,
+ * без промежуточного пункта «Скопировать». Тест не зависит от
  * захардкоженного URL и проверяет актуальный маршрут карточки.
  */
 test.describe('Открытие карточки ФЛ по ссылке в новой вкладке', () => {
@@ -68,7 +80,10 @@ test.describe('Открытие карточки ФЛ по ссылке в но�
 
       const newPage = await openIndividualCardByLink(context, link);
       try {
-        await expect(newPage).toHaveURL(link);
+        const expectedPath = cardPath(link);
+        await expect(newPage).toHaveURL(
+          (url) => url.origin === APP_ORIGIN && url.pathname.replace(/\/+$/, '') === expectedPath,
+        );
         await expectClientCard(newPage, client);
       } finally {
         await newPage.close();
@@ -86,26 +101,23 @@ test.describe('Открытие карточки ФЛ по ссылке в но�
     const link = await copyIndividualCardLink(page);
     expectLiveCardLink(link);
 
-    // После копирования меню закрывается, поэтому открываем его повторно.
+    // В новой версии карточки «В новой вкладке» находится в подменю
+    // «Ссылка/Поделиться» меню карточки, а не в меню тулбара.
+    await openIndividualCardShareMenu(page);
+
+    const newPagePromise = context.waitForEvent('page');
     await page
-      .locator('[title="Ссылка/Поделиться"]')
+      .getByText('В новой вкладке', { exact: true })
       .filter({ visible: true })
       .first()
       .click();
-
-    const newTabItem = page
-      .getByText('В новой вкладке', { exact: true })
-      .filter({ visible: true })
-      .first();
-    await expect(newTabItem).toBeVisible();
-
-    const newPagePromise = context.waitForEvent('page');
-    await newTabItem.click();
     const newPage = await newPagePromise;
 
     try {
       await newPage.waitForLoadState('domcontentloaded');
-      await expect(newPage).toHaveURL(link);
+      console.log(`[test-6] новая вкладка: ${newPage.url()}`);
+      expectLiveCardLink(newPage.url());
+      expect(cardPath(newPage.url())).toBe(cardPath(link));
       await expect(newPage.locator('.crm_IndividualCard__tabsArea')).toBeVisible({
         timeout: 90_000,
       });

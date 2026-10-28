@@ -22,6 +22,8 @@ jobs:
       CI: true
       SABY_LOGIN: ${{ secrets.SABY_LOGIN }}
       SABY_PASSWORD: ${{ secrets.SABY_PASSWORD }}
+      # Основному набору не нужна сессия пустого пользователя.
+      SABY_SETUP_EMPTY: '0'
 
     steps:
       - name: Checkout
@@ -39,8 +41,35 @@ jobs:
       - name: Install Chromium
         run: npx playwright install chromium
 
+      - name: Print environment
+        shell: pwsh
+        run: |
+          Write-Host "CI: $env:CI"
+          Write-Host "Commit: $(git rev-parse HEAD)"
+          node --version
+          npm --version
+          npx playwright --version
+
       - name: Run Playwright tests
-        run: npm test
+        run: npx playwright test --grep-invert "@empty-user"
+
+      - name: Print failure context
+        if: failure()
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path test-results -Recurse -Filter error-context.md -ErrorAction SilentlyContinue
+          if (-not $files) {
+            Write-Host "error-context.md не найден. Смотрите ошибку Playwright выше и артефакты test-results."
+            exit 0
+          }
+          foreach ($file in $files) {
+            Write-Host ""
+            Write-Host "===== $($file.FullName) ====="
+            Get-Content -Path $file.FullName -Encoding utf8
+          }
+          Write-Host ""
+          Write-Host "=== Файлы в test-results ==="
+          Get-ChildItem -Path test-results -Recurse -File | Select-Object FullName, Length | Format-Table -AutoSize
 
       - name: Prepare test-results artifact
         if: always()
@@ -63,6 +92,91 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results
+          path: test-results/
+          if-no-files-found: error
+          retention-days: 14
+
+  empty-contacts:
+    name: Playwright — пустой пользователь (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    env:
+      CI: true
+      SABY_EMPTY_LOGIN: ${{ secrets.SABY_EMPTY_LOGIN }}
+      SABY_EMPTY_PASSWORD: ${{ secrets.SABY_EMPTY_PASSWORD }}
+      # Этому job'у не нужна сессия основного пользователя.
+      SABY_SETUP_MAIN: '0'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Нужен полный Chromium: вход пустого пользователя через SSO
+      # не проходит в headless-shell из-за проверки отпечатка устройства.
+      - name: Install Chromium
+        run: npx playwright install chromium
+
+      - name: Print environment
+        shell: pwsh
+        run: |
+          Write-Host "CI: $env:CI"
+          Write-Host "Commit: $(git rev-parse HEAD)"
+          node --version
+          npm --version
+          npx playwright --version
+
+      - name: Run empty-user contact tests
+        run: npx playwright test --grep "@empty-user"
+
+      - name: Print failure context
+        if: failure()
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path test-results -Recurse -Filter error-context.md -ErrorAction SilentlyContinue
+          if (-not $files) {
+            Write-Host "error-context.md не найден. Смотрите ошибку Playwright выше и артефакты test-results."
+            exit 0
+          }
+          foreach ($file in $files) {
+            Write-Host ""
+            Write-Host "===== $($file.FullName) ====="
+            Get-Content -Path $file.FullName -Encoding utf8
+          }
+          Write-Host ""
+          Write-Host "=== Файлы в test-results ==="
+          Get-ChildItem -Path test-results -Recurse -File | Select-Object FullName, Length | Format-Table -AutoSize
+
+      - name: Prepare test-results artifact
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path test-results | Out-Null
+          Set-Content -Path test-results/artifact-placeholder.txt -Value "Playwright failure artifacts appear here; this run produced none."
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-empty
+          path: playwright-report/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-empty
           path: test-results/
           if-no-files-found: error
           retention-days: 14
