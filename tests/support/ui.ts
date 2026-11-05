@@ -16,9 +16,25 @@ export const miniCard = (page: Page): Locator =>
 export const miniCardDialog = (page: Page): Locator =>
   page.locator('.PersonCard-MiniCard__dialog');
 
+/**
+ * Навигация с повтором для редкой ошибки Chromium
+ * «ERR_NO_BUFFER_SPACE», которая появляется при нескольких воркерах
+ * на CI. Повторяем только эту ошибку, остальные пробрасываем сразу.
+ */
+export async function gotoWithRetry(page: Page, url: string): Promise<void> {
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+  } catch (error) {
+    if (!String(error).includes('ERR_NO_BUFFER_SPACE')) throw error;
+    console.warn('[ui] ERR_NO_BUFFER_SPACE, повторяю навигацию');
+    await page.waitForTimeout(1_000);
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+  }
+}
+
 export async function openWorkspace(page: Page, url: string): Promise<void> {
   console.log(`[ui] открываю: ${url}`);
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+  await gotoWithRetry(page, url);
   console.log(`[ui] URL после навигации: ${page.url()}`);
 
   // Сессия могла истечь во время длинного прогона — повторно логинимся.
@@ -659,12 +675,12 @@ export async function openIndividualCardByLink(
 ): Promise<Page> {
   console.log(`[ui] открываю карточку по ссылке: ${link}`);
   const page = await context.newPage();
-  await page.goto(link, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+  await gotoWithRetry(page, link);
 
   if (page.url().includes('fix-sso.saby.ru')) {
     console.warn('[ui] сессия истекла при открытии ссылки, повторный вход');
     await login(page);
-    await page.goto(link, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+    await gotoWithRetry(page, link);
   }
 
   await expect(page.locator('.crm_IndividualCard__tabsArea')).toBeVisible({ timeout: 90_000 });

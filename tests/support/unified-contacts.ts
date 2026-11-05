@@ -3,6 +3,7 @@ import { CLIENTS_URL } from './constants';
 import {
   deleteIndividualByQuery,
   dismissNotifications,
+  gotoWithRetry,
   openContacts,
   workspace,
   type IndividualDraft,
@@ -28,25 +29,52 @@ const addMenuItem = (page: Page, name: string): Locator =>
   visibleMenu(page).getByText(name, { exact: true }).filter({ visible: true }).first();
 
 async function openAddMenu(page: Page, item: string): Promise<void> {
+  const globalLoading = page
+    .locator('[data-qa="LoadingIndicator_Indicator"].controls-loading-indicator_global')
+    .filter({ visible: true });
+
   // После перехода страница Saby ещё инициализируется, и первый клик
   // по «+» может потеряться. Повторяем, пока меню не откроется.
   for (let attempt = 0; attempt < 3; attempt++) {
+    // Если меню уже открыто (например, из-за задержки отрисовки),
+    // повторный клик по «+» перехватывается пунктом меню. Используем его.
+    const existingMenu = visibleMenu(page);
+    if (await existingMenu.isVisible().catch(() => false)) {
+      const existingItem = existingMenu
+        .getByText(item, { exact: true })
+        .filter({ visible: true })
+        .first();
+      if (await existingItem.isVisible().catch(() => false)) {
+        await existingItem.click();
+        return;
+      }
+
+      await page.keyboard.press('Escape');
+      await expect(existingMenu).toBeHidden({ timeout: 5_000 }).catch(() => undefined);
+    }
+
+    // Глобальный индикатор загрузки перекрывает кнопку «+».
+    await expect(globalLoading)
+      .toBeHidden({ timeout: 30_000 })
+      .catch(() => undefined);
+
     const button = addButton(page);
     await expect(button).toBeVisible({ timeout: 30_000 });
     await button.click();
+
     try {
       await expect(visibleMenu(page)).toBeVisible({ timeout: 5_000 });
-      break;
+      await addMenuItem(page, item).click();
+      return;
     } catch (error) {
       if (attempt === 2) throw error;
     }
   }
-  await addMenuItem(page, item).click();
 }
 
 /** Открывает реестр клиентов (нужен для создания организации). */
 export async function openClients(page: Page): Promise<void> {
-  await page.goto(CLIENTS_URL, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+  await gotoWithRetry(page, CLIENTS_URL);
   await expect(workspace(page)).toBeVisible({ timeout: 90_000 });
   await dismissNotifications(page);
 }
