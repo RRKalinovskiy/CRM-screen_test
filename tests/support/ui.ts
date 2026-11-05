@@ -545,11 +545,12 @@ export type IndividualTab = 'tabparams' | 'tabpurchases' | 'tabactivity';
 
 // Любой из признаков, что содержимое вкладки уже отрисовалось.
 // Нужен, чтобы не кликать по вкладкам во время инициализации карточки.
-const CARD_READY = /Можно добавить|Заказ|Запланировать|Показать все события|Паспорт/;
+const CARD_READY =
+  /Можно добавить|Заказ|Счет|Реализация|Коммерческое предложение|Запланировать|Показать все события|Паспорт/;
 
 const TAB_CONTENT: Record<IndividualTab, RegExp> = {
   tabparams: /Можно добавить|Паспорт/,
-  tabpurchases: /Заказ/,
+  tabpurchases: /Заказ|Счет|Реализация|Коммерческое предложение/,
   tabactivity: /Запланировать|Показать все события/,
 };
 
@@ -730,4 +731,284 @@ export async function expectCardScreenshot(
       .evaluate((element) => element.remove())
       .catch(() => undefined);
   }
+}
+
+/**
+ * Типы документов, которые создаются из карточки ФЛ через
+ * «Добавить» → «Продажи». В списке и фильтре Saby использует
+ * разные названия: например, «Счет» в строке и «Счета» в фильтре.
+ */
+export type SalesDocumentType = {
+  category: 'Счета' | 'Заказы' | 'Реализации' | 'Коммерческие предложения';
+  leaf: 'Счет' | 'Заказ от покупателя' | 'Реализация' | 'Коммерческое предложение';
+  listTitle: string;
+  filterTitle: string;
+};
+
+export const SALES_DOCUMENT_TYPES: SalesDocumentType[] = [
+  {
+    category: 'Счета',
+    leaf: 'Счет',
+    listTitle: 'Счет',
+    filterTitle: 'Счета',
+  },
+  {
+    category: 'Заказы',
+    leaf: 'Заказ от покупателя',
+    listTitle: 'Заказ от покупателя',
+    filterTitle: 'Заказы от покупателей',
+  },
+  {
+    category: 'Реализации',
+    leaf: 'Реализация',
+    listTitle: 'Реализация',
+    filterTitle: 'Реализации',
+  },
+  {
+    category: 'Коммерческие предложения',
+    leaf: 'Коммерческое предложение',
+    listTitle: 'Коммерческое предложение',
+    filterTitle: 'Коммерческие предложения',
+  },
+];
+
+/**
+ * Верхний редактор документа. Контактная карточка тоже является
+ * popup-окном, поэтому ищем окно с кнопкой сохранения документа.
+ * Подпись «Комментарий» использовать нельзя: после заполнения поля
+ * она исчезает, и локатор перестаёт находить уже открытый редактор.
+ */
+const documentEditor = (page: Page): Locator =>
+  page
+    .locator('.controls-Popup_shown')
+    .filter({ visible: true })
+    .filter({
+      has: page.locator(
+        '[data-qa="edo3-ReadOnlyStateTemplate__saveButton"], [title="Сохранить"]',
+      ),
+    })
+    .last();
+
+/** Открывает редактор нового документа продаж из карточки ФЛ. */
+export async function createSalesDocument(
+  page: Page,
+  type: SalesDocumentType,
+): Promise<void> {
+  const add = cardBody(page)
+    .locator('[data-qa="crm_addButton"]')
+    .filter({ visible: true })
+    .first();
+  await expect(add).toBeVisible();
+  await add.click();
+
+  const addMenu = page.locator('.controls-Menu__popup').filter({ visible: true }).last();
+  await expect(addMenu).toBeVisible();
+  await addMenu.getByText('Продажи', { exact: true }).filter({ visible: true }).last().click();
+
+  // В меню «Продажи» четыре категории; «Реализации» раскрывается
+  // в дополнительное подменю, поэтому лист выбираем в последнем меню.
+  const salesMenu = page
+    .locator('.controls-Menu__popup')
+    .filter({ visible: true })
+    .filter({ hasText: 'Коммерческие предложения' })
+    .last();
+  await expect(salesMenu).toBeVisible();
+  await salesMenu
+    .getByText(type.category, { exact: true })
+    .filter({ visible: true })
+    .last()
+    .click();
+
+  const submenu = page.locator('.controls-Menu__popup').filter({ visible: true }).last();
+  await expect(submenu).toBeVisible();
+  await submenu.getByText(type.leaf, { exact: true }).filter({ visible: true }).last().click();
+
+  const editor = documentEditor(page);
+  await expect(editor).toBeVisible({ timeout: 30_000 });
+  // Кнопка сохранения появляется раньше, чем форма документа догружает
+  // строки и покупателя. Ждём заголовок таблицы, иначе первый клик
+  // по «Сохранить» может прийтись на ещё не инициализированный редактор.
+  await expect(editor.getByText(/наименования/i).first()).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
+/** Заполняет комментарий документа и сохраняет его. */
+export async function fillAndSaveDocument(page: Page, comment: string): Promise<void> {
+  const editor = documentEditor(page);
+  await expect(editor).toBeVisible();
+
+  const commentField = editor.locator('textarea').filter({ visible: true }).first();
+  await expect(commentField).toBeVisible();
+  await commentField.fill(comment);
+  await expect(commentField).toHaveValue(comment);
+  // Снимаем фокус, чтобы Saby зафиксировал изменение поля до сохранения.
+  await commentField.blur();
+
+  const save = editor
+    .locator('[data-qa="edo3-ReadOnlyStateTemplate__saveButton"], [title="Сохранить"]')
+    .filter({ visible: true })
+    .first();
+  await expect(save).toBeVisible();
+  await expect(save).toBeEnabled();
+  await save.click();
+
+  // Сохранение закрывает редактор и добавляет строку с комментарием
+  // в список. Ждём именно строку: это подтверждает, что данные записались.
+  await expect(
+    cardBody(page).getByText(comment, { exact: true }).filter({ visible: true }).first(),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(editor).toBeHidden({ timeout: 30_000 });
+}
+
+/** Проверяет, что сохранённый документ виден в списке с типом и комментарием. */
+export async function expectDocumentInList(
+  page: Page,
+  type: SalesDocumentType,
+  comment: string,
+): Promise<void> {
+  const body = cardBody(page);
+  const row = body.locator('[data-qa="row"]').filter({ hasText: comment }).first();
+  await expect(row).toContainText(type.listTitle);
+  await expect(row).toContainText(comment);
+  await expect(
+    body.getByText(comment, { exact: true }).filter({ visible: true }).first(),
+  ).toBeVisible();
+}
+
+/** Открывает всплывающий фильтр списка документов и ждёт его загрузки. */
+export async function openDocumentsFilter(page: Page): Promise<Locator> {
+  const filter = cardBody(page).locator('[title="Фильтр"]').filter({ visible: true }).first();
+  await expect(filter).toBeVisible();
+  await filter.click();
+
+  const popup = page
+    .locator('[templateforlog="EDO3/filterPopup:SimplePanel"]')
+    .filter({ visible: true })
+    .last();
+  await expect(popup).toBeVisible({ timeout: 15_000 });
+  await expect(
+    popup.getByText('Документы', { exact: true }).filter({ visible: true }).first(),
+  ).toBeVisible({ timeout: 15_000 });
+  return popup;
+}
+
+/** Закрывает всплывающий фильтр, не закрывая карточку ФЛ. */
+export async function closeDocumentsFilter(page: Page): Promise<void> {
+  const popup = page
+    .locator('[templateforlog="EDO3/filterPopup:SimplePanel"]')
+    .filter({ visible: true })
+    .last();
+  if (!(await popup.isVisible().catch(() => false))) return;
+
+  await page.keyboard.press('Escape');
+  await expect(popup).toBeHidden({ timeout: 10_000 });
+}
+
+/** Проверяет, что в фильтре под группой «Документы» есть типы документов. */
+export async function expectDocumentTypesInFilter(
+  page: Page,
+  titles: string[],
+): Promise<void> {
+  const popup = await openDocumentsFilter(page);
+  for (const title of titles) {
+    await expect(
+      popup.getByText(title, { exact: true }).filter({ visible: true }).first(),
+      `В фильтре не отображается тип документа «${title}»`,
+    ).toBeVisible();
+  }
+  await closeDocumentsFilter(page);
+}
+
+/** Проверяет, что после удаления документа его тип пропал из фильтра. */
+export async function expectFilterWithoutDocumentType(
+  page: Page,
+  absentTitle: string,
+): Promise<void> {
+  const popup = await openDocumentsFilter(page);
+  await expect(
+    popup.getByText(absentTitle, { exact: true }).filter({ visible: true }),
+    `В фильтре не должен отображаться тип документа «${absentTitle}»`,
+  ).toHaveCount(0);
+  await closeDocumentsFilter(page);
+}
+
+async function deleteDocumentRow(page: Page, row: Locator): Promise<void> {
+  await row.locator('[data-qa="cell"]').first().hover();
+
+  const del = row
+    .locator('[data-qa*="crmDeleteDocument"]')
+    .filter({ visible: true })
+    .first();
+  await expect(del).toBeVisible();
+  await del.click();
+
+  const confirm = page.locator('.controls-Confirmation_popup').filter({ visible: true }).last();
+  await expect(confirm).toBeVisible();
+  await expect(confirm).toContainText('Удалить');
+  await confirm.getByText('Да', { exact: true }).filter({ visible: true }).first().click();
+  await expect(confirm).toBeHidden({ timeout: 30_000 });
+}
+
+/** Удаляет документ из списка по уникальному комментарию. */
+export async function deleteDocumentByComment(page: Page, comment: string): Promise<void> {
+  const body = cardBody(page);
+  await expect(
+    body.getByText(comment, { exact: true }).filter({ visible: true }).first(),
+  ).toBeVisible();
+
+  const row = body.locator('[data-qa="row"]').filter({ hasText: comment }).first();
+  await deleteDocumentRow(page, row);
+
+  await expect(
+    body.getByText(comment, { exact: true }).filter({ visible: true }),
+  ).toHaveCount(0, { timeout: 30_000 });
+}
+
+/** Удаляет все документы из открытого списка покупок/продаж. */
+export async function deleteAllDocuments(page: Page): Promise<void> {
+  const rows = cardBody(page).locator('[data-qa="row"]');
+  let remaining = await rows.count();
+
+  while (remaining > 0) {
+    await deleteDocumentRow(page, rows.first());
+    await expect.poll(() => rows.count(), { timeout: 30_000 }).toBeLessThan(remaining);
+    remaining = await rows.count();
+  }
+}
+
+/**
+ * Страховка для afterEach: удаляет документы и созданный контакт ФЛ.
+ * Если контакт уже удалён, ничего не делает.
+ */
+export async function cleanupIndividualWithDocuments(
+  page: Page,
+  query: string,
+): Promise<void> {
+  await page.keyboard.press('Escape').catch(() => undefined);
+  await openContacts(page);
+
+  const search = page.getByPlaceholder('\uFEFF').filter({ visible: true }).first();
+  await expect(search).toBeVisible();
+  await search.fill(query);
+  await page.waitForTimeout(800);
+
+  const person = page.getByText(query, { exact: false }).filter({ visible: true }).first();
+  if (!(await person.isVisible().catch(() => false))) return;
+
+  await person.click();
+  await expect(page.locator('.crm_IndividualCard__tabsArea')).toBeVisible({ timeout: 30_000 });
+  await expect(cardBody(page)).toBeVisible();
+  await expect(cardBody(page)).toContainText(CARD_READY);
+
+  await selectIndividualTab(page, 'tabpurchases');
+  await deleteAllDocuments(page);
+
+  await deleteCurrentIndividual(page);
+  await expect(page.locator('.crm_IndividualCard__tabsArea'))
+    .toBeHidden({ timeout: 30_000 })
+    .catch(() => undefined);
+  await expect(page.getByText(query, { exact: false }).filter({ visible: true })).toHaveCount(0, {
+    timeout: 60_000,
+  });
 }
