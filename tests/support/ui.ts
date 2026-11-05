@@ -101,11 +101,22 @@ export async function openThemeSection(page: Page, section: string): Promise<voi
     throw new Error(`Не задан маркер загрузки для раздела темы: ${section}`);
   }
 
-  await page.getByText(section, { exact: true }).filter({ visible: true }).last().click();
-
   const markerLocator =
     typeof marker === 'string' ? page.getByText(marker, { exact: true }) : page.getByText(marker);
-  await expect(markerLocator.first()).toBeVisible({ timeout: 30_000 });
+
+  // Клик по разделу иногда теряется, пока карточка темы дорисовывается.
+  // Повторяем клик, если содержимое раздела так и не появилось.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await page.getByText(section, { exact: true }).filter({ visible: true }).last().click();
+    try {
+      await expect(markerLocator.first()).toBeVisible({
+        timeout: attempt === 0 ? 10_000 : 30_000,
+      });
+      break;
+    } catch (error) {
+      if (attempt === 1) throw error;
+    }
+  }
 
   // Пустой rich-text редактор инструкции подгружается отдельно от заголовка.
   // Ждём плейсхолдер, чтобы его скрытие не сдвигало иллюстрацию на скриншоте.
@@ -1210,4 +1221,234 @@ export async function cleanupIndividualWithDocuments(
   await expect(page.getByText(query, { exact: false }).filter({ visible: true })).toHaveCount(0, {
     timeout: 60_000,
   });
+}
+
+/** Открывает тему из реестра по точному названию. */
+export async function openThemeByName(page: Page, name: string): Promise<void> {
+  await openThemes(page);
+  const theme = page.getByText(name, { exact: true }).filter({ visible: true }).first();
+  await expect(theme).toBeVisible({ timeout: 30_000 });
+  await theme.click();
+  await expect(
+    page.getByText('Воронка продаж', { exact: true }).filter({ visible: true }).last(),
+  ).toBeVisible({ timeout: 30_000 });
+}
+
+/**
+ * Копирует тему через контекстное меню и сохраняет копию под новым именем.
+ * Saby открывает копию в режиме редактирования с названием оригинала.
+ */
+export async function copyTheme(
+  page: Page,
+  sourceName: string,
+  copyName: string,
+): Promise<void> {
+  await openThemes(page);
+
+  const source = page.getByText(sourceName, { exact: true }).filter({ visible: true }).first();
+  await expect(source).toBeVisible({ timeout: 30_000 });
+  const row = source.locator('xpath=ancestor::div[@data-qa="row"][1]');
+  await row.click({ button: 'right' });
+
+  const menu = page.locator('.controls-Menu__popup').filter({ visible: true }).last();
+  await expect(menu).toBeVisible();
+  await menu.getByText('Копировать', { exact: true }).filter({ visible: true }).first().click();
+
+  const nameInput = page
+    .locator('.sabyPage-MainLayout__headerLeft input')
+    .filter({ visible: true })
+    .first();
+  await expect(nameInput).toBeVisible({ timeout: 30_000 });
+  await expect(nameInput).toHaveValue(sourceName);
+
+  // Поле названия в Saby дописывает текст к модели, поэтому заменяем
+  // значение выделением и вводом, как это делает пользователь.
+  await nameInput.click();
+  await nameInput.selectText();
+  await nameInput.press('Backspace');
+  await nameInput.pressSequentially(copyName, { delay: 10 });
+  await expect(nameInput).toHaveValue(copyName);
+  await nameInput.blur();
+
+  const save = page.getByText('Сохранить', { exact: true }).filter({ visible: true }).first();
+  await expect(save).toBeVisible();
+  await save.click();
+
+  await expect(
+    page.getByText(copyName, { exact: true }).filter({ visible: true }).first(),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.getByText('Изменить', { exact: true }).filter({ visible: true }).first(),
+  ).toBeVisible({ timeout: 30_000 });
+}
+
+/** Открывает карточку этапа воронки и возвращает её диалог и редактор кода. */
+export async function openThemeStageSettings(
+  page: Page,
+  stageName: string,
+): Promise<{ dialog: Locator; codeEditor: Locator }> {
+  const stage = page.getByText(stageName, { exact: true }).filter({ visible: true }).first();
+  await expect(stage).toBeVisible({ timeout: 30_000 });
+  await stage.click();
+
+  const dialog = page.locator('.controls-DialogTemplate').filter({ visible: true }).last();
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  const codeEditor = dialog.locator('.CodeMirror').filter({ visible: true }).first();
+  await expect(codeEditor).toBeVisible({ timeout: 30_000 });
+  return { dialog, codeEditor };
+}
+
+/** Проверяет, что в редакторе кода нет маркеров ошибок. */
+export async function expectCodeEditorHasNoErrors(scope: Locator): Promise<void> {
+  await expect(
+    scope
+      .locator(
+        '.CodeMirror-lint-marker-error, .CodeMirror-lint-message-error, [class*="CodeEditor__error"]',
+      )
+      .filter({ visible: true }),
+  ).toHaveCount(0);
+}
+
+/** Закрывает диалог настроек этапа. */
+export async function closeThemeStageSettings(page: Page, dialog: Locator): Promise<void> {
+  const close = dialog.locator('[title="Закрыть"]').filter({ visible: true }).first();
+  await expect(close).toBeVisible();
+  await close.click();
+  await expect(dialog).toBeHidden({ timeout: 30_000 });
+}
+
+/** Открывает панель итога темы (например, «Итоги пользователя»). */
+export async function openThemeOutcome(page: Page, outcomeName: string): Promise<void> {
+  const outcome = page.getByText(outcomeName, { exact: true }).filter({ visible: true }).first();
+  await expect(outcome).toBeVisible({ timeout: 30_000 });
+  await outcome.click();
+  await expect(
+    page.getByText('Формула видимости перехода', { exact: true }).filter({ visible: true }).first(),
+  ).toBeVisible({ timeout: 30_000 });
+}
+
+/** Открывает полноэкранный редактор формулы видимости перехода. */
+export async function openThemeFormula(
+  page: Page,
+): Promise<{ codeEditor: Locator; properties: Locator }> {
+  const formula = page
+    .getByText('Формула видимости перехода', { exact: true })
+    .filter({ visible: true })
+    .first();
+  await expect(formula).toBeVisible();
+  await formula.click();
+
+  const codeEditor = page.locator('.CodeMirror').filter({ visible: true }).first();
+  await expect(codeEditor).toBeVisible({ timeout: 30_000 });
+  const properties = page
+    .locator('.baseEditorTemplate-PopupTemplate__rightSidebarContainer')
+    .filter({ visible: true })
+    .first();
+  await expect(properties).toBeVisible({ timeout: 30_000 });
+  return { codeEditor, properties };
+}
+
+/** Читает UUID формулы из панели свойств редактора. */
+export async function getFormulaUuid(page: Page): Promise<string> {
+  const properties = page
+    .locator('.baseEditorTemplate-PopupTemplate__rightSidebarContainer')
+    .filter({ visible: true })
+    .first();
+  const text = (await properties.innerText()).replace(/\s+/g, ' ').trim();
+  const match = text.match(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+  );
+  if (!match) {
+    throw new Error(`Не найден UUID формулы в панели свойств: ${text}`);
+  }
+  return match[0];
+}
+
+/** Заменяет код в полноэкранном редакторе формулы. */
+export async function editFormulaCode(page: Page, code: string): Promise<void> {
+  const editor = page.locator('.CodeMirror').filter({ visible: true }).first();
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type(code);
+  await expect(editor).toContainText(code.split('\n')[0]);
+}
+
+/** Сохраняет изменения в полноэкранном редакторе формулы. */
+export async function saveFormula(page: Page): Promise<void> {
+  const saves = page.locator('[title="Сохранить"]').filter({ visible: true });
+  const count = await saves.count();
+  for (let i = 0; i < count; i++) {
+    const box = await saves.nth(i).boundingBox();
+    if (box && box.x > 1150 && box.y < 50) {
+      await saves.nth(i).click();
+      return;
+    }
+  }
+  throw new Error('Не найдена кнопка сохранения формулы');
+}
+
+/** Закрывает полноэкранный редактор формулы, оставляя панель итога. */
+export async function closeFormulaEditor(page: Page): Promise<void> {
+  const closes = page.locator('[title="Закрыть"]').filter({ visible: true });
+  const count = await closes.count();
+  for (let i = 0; i < count; i++) {
+    const box = await closes.nth(i).boundingBox();
+    if (box && box.x > 1200 && box.y < 50) {
+      await closes.nth(i).click();
+      await expect(
+        page
+          .getByText('Формула видимости перехода', { exact: true })
+          .filter({ visible: true })
+          .first(),
+      ).toBeVisible({ timeout: 30_000 });
+      return;
+    }
+  }
+  throw new Error('Не найдена кнопка закрытия редактора формулы');
+}
+
+/** Закрывает панель итога, открытую кнопкой «Итоги пользователя». */
+export async function closeOutcomePanel(page: Page): Promise<void> {
+  const outcome = page
+    .locator('.controls-DialogTemplate')
+    .filter({ visible: true })
+    .filter({ hasText: 'Формула видимости перехода' })
+    .last();
+  if (await outcome.isVisible().catch(() => false)) {
+    const close = outcome.locator('[title="Закрыть"]').filter({ visible: true }).first();
+    if (await close.isVisible().catch(() => false)) {
+      await close.click();
+      await expect(outcome).toBeHidden({ timeout: 30_000 });
+      return;
+    }
+  }
+
+  const closes = page.locator('[title="Закрыть"]').filter({ visible: true });
+  const count = await closes.count();
+  for (let i = 0; i < count; i++) {
+    const box = await closes.nth(i).boundingBox();
+    if (box && box.x > 840 && box.x < 870 && box.y > 110 && box.y < 130) {
+      await closes.nth(i).click();
+      return;
+    }
+  }
+  throw new Error('Не найдена кнопка закрытия панели итога');
+}
+
+/** Читает блок параметров темы для сравнения копии с оригиналом. */
+export async function readThemeParameters(page: Page): Promise<string> {
+  await expect(
+    page.getByText('Тип темы', { exact: true }).filter({ visible: true }).first(),
+  ).toBeVisible({ timeout: 30_000 });
+
+  const bodyText = (await page.locator('body').innerText()).replace(/\s+/g, ' ').trim();
+  const start = bodyText.indexOf('Тип темы');
+  const endMarker =
+    'Неотгруженные и неоплаченные счета после положительного закрытия сделки Оставить Удалить';
+  const end = bodyText.indexOf(endMarker);
+  if (start < 0 || end < 0) {
+    throw new Error('Не удалось прочитать параметры темы');
+  }
+  return bodyText.slice(start, end + endMarker.length);
 }
