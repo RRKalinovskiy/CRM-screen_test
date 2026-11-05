@@ -6,6 +6,8 @@ import {
   copyTheme,
   deleteCurrentTheme,
   deleteThemeByName,
+  discardThemeDraft,
+  dismissThemeInfoBox,
   editFormulaCode,
   expectCodeEditorHasNoErrors,
   getFormulaUuid,
@@ -15,8 +17,13 @@ import {
   openThemeSection,
   openThemes,
   openThemeStageSettings,
+  readStageInstruction,
+  readThemeFormulaUuid,
   readThemeParameters,
+  replaceThemeName,
   saveFormula,
+  saveThemeDraft,
+  startThemeCopy,
 } from './support/ui';
 
 const SOURCE_THEME = 'Проверка СПК';
@@ -37,12 +44,12 @@ const uniqueSuffix = (): string =>
 test.describe.configure({ mode: 'serial' });
 
 test.describe('Копирование темы «Проверка СПК»', () => {
-  let createdTheme: string | undefined;
+  let createdThemes: string[] = [];
 
   test.afterEach(async ({ page }) => {
-    const theme = createdTheme;
-    createdTheme = undefined;
-    if (theme) {
+    const themes = createdThemes;
+    createdThemes = [];
+    for (const theme of themes) {
       await deleteThemeByName(page, theme);
     }
   });
@@ -50,7 +57,7 @@ test.describe('Копирование темы «Проверка СПК»', () 
   test('Проверяет код этапа, итоги, формы, параметры и доп. поля копии', async ({ page }) => {
     test.setTimeout(420_000);
     const copyName = `АТ Копия СПК ${uniqueSuffix()}`;
-    createdTheme = copyName;
+    createdThemes = [copyName];
 
     // Эталонные параметры снимаем с оригинала до копирования.
     await openThemeByName(page, SOURCE_THEME);
@@ -113,7 +120,7 @@ test.describe('Копирование темы «Проверка СПК»', () 
 
     // Удаляем созданную копию.
     await deleteCurrentTheme(page);
-    createdTheme = undefined;
+    createdThemes = [];
     await expect(
       page.getByText(copyName, { exact: true }).filter({ visible: true }),
     ).toHaveCount(0, { timeout: 60_000 });
@@ -124,7 +131,7 @@ test.describe('Копирование темы «Проверка СПК»', () 
   }) => {
     test.setTimeout(420_000);
     const copyName = `АТ Копия СПК ${uniqueSuffix()}`;
-    createdTheme = copyName;
+    createdThemes = [copyName];
 
     await openThemes(page);
     await copyTheme(page, SOURCE_THEME, copyName);
@@ -171,7 +178,145 @@ test.describe('Копирование темы «Проверка СПК»', () 
 
     // Удаляем копию, оригинал оставляем без изменений.
     await deleteThemeByName(page, copyName);
-    createdTheme = undefined;
+    createdThemes = [];
+    await expect(
+      page.getByText(copyName, { exact: true }).filter({ visible: true }),
+    ).toHaveCount(0, { timeout: 60_000 });
+  });
+
+  test('Проверяет валидацию имени при копировании темы', async ({ page }) => {
+    test.setTimeout(300_000);
+
+    // Пустое имя.
+    await openThemes(page);
+    await startThemeCopy(page, SOURCE_THEME);
+    await replaceThemeName(page, '');
+    await saveThemeDraft(page);
+    await expect(
+      page
+        .getByText('Поле обязательно для заполнения', { exact: true })
+        .filter({ visible: true })
+        .first(),
+    ).toBeVisible({ timeout: 30_000 });
+    await discardThemeDraft(page);
+
+    // Имя только из пробелов.
+    await openThemes(page);
+    await startThemeCopy(page, SOURCE_THEME);
+    await replaceThemeName(page, '   ');
+    await saveThemeDraft(page);
+    await expect(
+      page
+        .getByText('Создавать темы отношений без названия - запрещено!', { exact: true })
+        .filter({ visible: true })
+        .first(),
+    ).toBeVisible({ timeout: 30_000 });
+    await dismissThemeInfoBox(page);
+    await discardThemeDraft(page);
+
+    // Имя уже существующей темы.
+    await openThemes(page);
+    await startThemeCopy(page, SOURCE_THEME);
+    await saveThemeDraft(page);
+    await expect(
+      page
+        .getByText('Регламент с таким названием уже существует', { exact: true })
+        .filter({ visible: true })
+        .first(),
+    ).toBeVisible({ timeout: 30_000 });
+    await dismissThemeInfoBox(page);
+    await discardThemeDraft(page);
+
+    // В реестре осталась только оригинальная тема.
+    await openThemes(page);
+    await expect(
+      page.locator('[data-qa="row"]').filter({ hasText: SOURCE_THEME }),
+    ).toHaveCount(1);
+  });
+
+  test('Проверяет уникальные UUID у двух копий и оригинала', async ({ page }) => {
+    test.setTimeout(420_000);
+    const suffix = uniqueSuffix();
+    const copyA = `АТ Копия СПК A ${suffix}`;
+    const copyB = `АТ Копия СПК B ${suffix}`;
+    createdThemes = [copyA, copyB];
+
+    await openThemes(page);
+    await copyTheme(page, SOURCE_THEME, copyA);
+    const uuidA = await readThemeFormulaUuid(page, copyA);
+
+    await openThemes(page);
+    await copyTheme(page, SOURCE_THEME, copyB);
+    const uuidB = await readThemeFormulaUuid(page, copyB);
+
+    const originalUuid = await readThemeFormulaUuid(page, SOURCE_THEME);
+
+    expect(uuidA).not.toBe(uuidB);
+    expect(uuidA).not.toBe(originalUuid);
+    expect(uuidB).not.toBe(originalUuid);
+
+    await deleteThemeByName(page, copyA);
+    await deleteThemeByName(page, copyB);
+    createdThemes = [];
+    await expect(
+      page.getByText(copyA, { exact: true }).filter({ visible: true }),
+    ).toHaveCount(0, { timeout: 60_000 });
+    await expect(
+      page.getByText(copyB, { exact: true }).filter({ visible: true }),
+    ).toHaveCount(0, { timeout: 60_000 });
+  });
+
+  test('Проверяет настройки итога «Отрицательно» без ошибок', async ({ page }) => {
+    test.setTimeout(180_000);
+    await openThemeByName(page, SOURCE_THEME);
+    await openThemeOutcome(page, 'Отрицательно', 'Перевести на этап');
+
+    await expect(
+      page.getByText('Действия', { exact: true }).filter({ visible: true }).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Перевести на этап', { exact: true }).filter({ visible: true }).first(),
+    ).toBeVisible();
+    // У отрицательного итога в этой теме нет условия «Формула видимости перехода».
+    await expect(
+      page
+        .getByText('Формула видимости перехода', { exact: true })
+        .filter({ visible: true }),
+    ).toHaveCount(0);
+    await expect(page.locator('.CodeMirror').filter({ visible: true })).toHaveCount(0);
+
+    await closeOutcomePanel(page, 'Отрицательно');
+  });
+
+  test('Переносит инструкцию этапа и вложения в копию', async ({ page }) => {
+    test.setTimeout(300_000);
+    const copyName = `АТ Копия СПК Инструкция ${uniqueSuffix()}`;
+    createdThemes = [copyName];
+
+    // Инструкция оригинала.
+    await openThemeByName(page, SOURCE_THEME);
+    let { dialog } = await openThemeStageSettings(page, STAGE_NAME);
+    const originalInstruction = await readStageInstruction(dialog);
+    await expect(
+      dialog.locator('[data-qa="docview3-AddButton"]').filter({ visible: true }).first(),
+    ).toBeVisible();
+    await closeThemeStageSettings(page, dialog);
+
+    // Инструкция и вложения копии.
+    await openThemes(page);
+    await copyTheme(page, SOURCE_THEME, copyName);
+    ({ dialog } = await openThemeStageSettings(page, STAGE_NAME));
+    const copyInstruction = await readStageInstruction(dialog);
+    expect(copyInstruction.text).toBe(originalInstruction.text);
+    expect(copyInstruction.attachments).toBe(originalInstruction.attachments);
+    await expect(
+      dialog.locator('[data-qa="docview3-AddButton"]').filter({ visible: true }).first(),
+    ).toBeVisible();
+    await expectCodeEditorHasNoErrors(dialog);
+    await closeThemeStageSettings(page, dialog);
+
+    await deleteThemeByName(page, copyName);
+    createdThemes = [];
     await expect(
       page.getByText(copyName, { exact: true }).filter({ visible: true }),
     ).toHaveCount(0, { timeout: 60_000 });

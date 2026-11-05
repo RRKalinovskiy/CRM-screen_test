@@ -1234,15 +1234,8 @@ export async function openThemeByName(page: Page, name: string): Promise<void> {
   ).toBeVisible({ timeout: 30_000 });
 }
 
-/**
- * Копирует тему через контекстное меню и сохраняет копию под новым именем.
- * Saby открывает копию в режиме редактирования с названием оригинала.
- */
-export async function copyTheme(
-  page: Page,
-  sourceName: string,
-  copyName: string,
-): Promise<void> {
+/** Открывает копию темы через контекстное меню, не сохраняя её. */
+export async function startThemeCopy(page: Page, sourceName: string): Promise<Locator> {
   await openThemes(page);
 
   const source = page.getByText(sourceName, { exact: true }).filter({ visible: true }).first();
@@ -1260,19 +1253,73 @@ export async function copyTheme(
     .first();
   await expect(nameInput).toBeVisible({ timeout: 30_000 });
   await expect(nameInput).toHaveValue(sourceName);
+  return nameInput;
+}
+
+/** Заменяет название темы в открытой карточке-копии. */
+export async function replaceThemeName(page: Page, name: string): Promise<void> {
+  const nameInput = page
+    .locator('.sabyPage-MainLayout__headerLeft input')
+    .filter({ visible: true })
+    .first();
+  await expect(nameInput).toBeVisible({ timeout: 30_000 });
 
   // Поле названия в Saby дописывает текст к модели, поэтому заменяем
   // значение выделением и вводом, как это делает пользователь.
   await nameInput.click();
   await nameInput.selectText();
   await nameInput.press('Backspace');
-  await nameInput.pressSequentially(copyName, { delay: 10 });
-  await expect(nameInput).toHaveValue(copyName);
+  if (name) {
+    await nameInput.pressSequentially(name, { delay: 10 });
+  }
+  await expect(nameInput).toHaveValue(name);
   await nameInput.blur();
+}
 
+/** Нажимает «Сохранить» в карточке темы. */
+export async function saveThemeDraft(page: Page): Promise<void> {
   const save = page.getByText('Сохранить', { exact: true }).filter({ visible: true }).first();
   await expect(save).toBeVisible();
   await save.click();
+}
+
+/** Закрывает информационное окно валидации с кнопкой «ОК». */
+export async function dismissThemeInfoBox(page: Page): Promise<void> {
+  const ok = page.getByText('ОК', { exact: true }).filter({ visible: true }).first();
+  if (await ok.isVisible().catch(() => false)) {
+    await ok.click();
+    await page.waitForTimeout(500);
+  }
+}
+
+/** Отменяет редактирование копии и подтверждает отказ от изменений. */
+export async function discardThemeDraft(page: Page): Promise<void> {
+  await dismissThemeInfoBox(page);
+
+  const cancel = page.getByText('Отменить', { exact: true }).filter({ visible: true }).first();
+  if (await cancel.isVisible().catch(() => false)) {
+    await cancel.click();
+    await page.waitForTimeout(500);
+    const no = page.getByText('Нет', { exact: true }).filter({ visible: true }).first();
+    if (await no.isVisible().catch(() => false)) {
+      await no.click();
+      await page.waitForTimeout(2_000);
+    }
+  }
+}
+
+/**
+ * Копирует тему через контекстное меню и сохраняет копию под новым именем.
+ * Saby открывает копию в режиме редактирования с названием оригинала.
+ */
+export async function copyTheme(
+  page: Page,
+  sourceName: string,
+  copyName: string,
+): Promise<void> {
+  await startThemeCopy(page, sourceName);
+  await replaceThemeName(page, copyName);
+  await saveThemeDraft(page);
 
   await expect(
     page.getByText(copyName, { exact: true }).filter({ visible: true }).first(),
@@ -1318,13 +1365,18 @@ export async function closeThemeStageSettings(page: Page, dialog: Locator): Prom
 }
 
 /** Открывает панель итога темы (например, «Итоги пользователя»). */
-export async function openThemeOutcome(page: Page, outcomeName: string): Promise<void> {
+export async function openThemeOutcome(
+  page: Page,
+  outcomeName: string,
+  marker: string | RegExp = 'Формула видимости перехода',
+): Promise<void> {
   const outcome = page.getByText(outcomeName, { exact: true }).filter({ visible: true }).first();
   await expect(outcome).toBeVisible({ timeout: 30_000 });
   await outcome.click();
-  await expect(
-    page.getByText('Формула видимости перехода', { exact: true }).filter({ visible: true }).first(),
-  ).toBeVisible({ timeout: 30_000 });
+
+  const markerLocator =
+    typeof marker === 'string' ? page.getByText(marker, { exact: true }) : page.getByText(marker);
+  await expect(markerLocator.first()).toBeVisible({ timeout: 30_000 });
 }
 
 /** Открывает полноэкранный редактор формулы видимости перехода. */
@@ -1408,12 +1460,15 @@ export async function closeFormulaEditor(page: Page): Promise<void> {
   throw new Error('Не найдена кнопка закрытия редактора формулы');
 }
 
-/** Закрывает панель итога, открытую кнопкой «Итоги пользователя». */
-export async function closeOutcomePanel(page: Page): Promise<void> {
+/** Закрывает панель итога, открытую кнопкой «Итоги пользователя» или «Отрицательно». */
+export async function closeOutcomePanel(
+  page: Page,
+  outcomeName = 'Формула видимости перехода',
+): Promise<void> {
   const outcome = page
     .locator('.controls-DialogTemplate')
     .filter({ visible: true })
-    .filter({ hasText: 'Формула видимости перехода' })
+    .filter({ hasText: outcomeName })
     .last();
   if (await outcome.isVisible().catch(() => false)) {
     const close = outcome.locator('[title="Закрыть"]').filter({ visible: true }).first();
@@ -1428,7 +1483,7 @@ export async function closeOutcomePanel(page: Page): Promise<void> {
   const count = await closes.count();
   for (let i = 0; i < count; i++) {
     const box = await closes.nth(i).boundingBox();
-    if (box && box.x > 840 && box.x < 870 && box.y > 110 && box.y < 130) {
+    if (box && box.x > 840 && box.x < 870 && box.y > 100 && box.y < 200) {
       await closes.nth(i).click();
       return;
     }
@@ -1451,4 +1506,36 @@ export async function readThemeParameters(page: Page): Promise<string> {
     throw new Error('Не удалось прочитать параметры темы');
   }
   return bodyText.slice(start, end + endMarker.length);
+}
+
+/** Читает текст инструкции этапа и количество вложений в диалоге. */
+export async function readStageInstruction(
+  dialog: Locator,
+): Promise<{ text: string; attachments: number }> {
+  const instruction = dialog.locator('.docview-textOrFile-view').filter({ visible: true }).first();
+  await expect(instruction).toBeVisible({ timeout: 30_000 });
+  await expect
+    .poll(async () => (await instruction.innerText()).replace(/\s+/g, ' ').trim(), {
+      timeout: 30_000,
+      message: 'Инструкция этапа не загрузилась',
+    })
+    .not.toBe('');
+
+  const text = (await instruction.innerText()).replace(/\s+/g, ' ').trim();
+  const attachments = await dialog
+    .locator('[class*="docview-file" i], [data-qa*="docview3-file" i]')
+    .filter({ visible: true })
+    .count();
+  return { text, attachments };
+}
+
+/** Открывает тему, итог «Итоги пользователя» и читает UUID формулы. */
+export async function readThemeFormulaUuid(page: Page, themeName: string): Promise<string> {
+  await openThemeByName(page, themeName);
+  await openThemeOutcome(page, 'Итоги пользователя');
+  await openThemeFormula(page);
+  const uuid = await getFormulaUuid(page);
+  await closeFormulaEditor(page);
+  await closeOutcomePanel(page);
+  return uuid;
 }
