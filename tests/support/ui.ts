@@ -1406,10 +1406,22 @@ export async function getFormulaUuid(page: Page): Promise<string> {
     .locator('.baseEditorTemplate-PopupTemplate__rightSidebarContainer')
     .filter({ visible: true })
     .first();
+  await expect(properties).toBeVisible({ timeout: 30_000 });
+
+  const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  // Панель свойств открывается раньше, чем в неё подгружается идентификатор.
+  await expect
+    .poll(
+      async () => {
+        const text = (await properties.innerText()).replace(/\s+/g, ' ').trim();
+        return text.match(uuidPattern)?.[0] ?? '';
+      },
+      { timeout: 30_000, message: 'UUID формулы не появился в панели свойств' },
+    )
+    .not.toBe('');
+
   const text = (await properties.innerText()).replace(/\s+/g, ' ').trim();
-  const match = text.match(
-    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
-  );
+  const match = text.match(uuidPattern);
   if (!match) {
     throw new Error(`Не найден UUID формулы в панели свойств: ${text}`);
   }
