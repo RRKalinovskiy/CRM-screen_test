@@ -28,6 +28,30 @@ const visibleMenu = (page: Page): Locator =>
 const addMenuItem = (page: Page, name: string): Locator =>
   visibleMenu(page).getByText(name, { exact: true }).filter({ visible: true }).first();
 
+/** Кликает пункт, если меню уже открыто. Возвращает true при успехе. */
+async function clickMenuItemIfOpen(page: Page, item: string): Promise<boolean> {
+  const menu = visibleMenu(page);
+  if (!(await menu.isVisible().catch(() => false))) return false;
+
+  const menuItem = menu
+    .getByText(item, { exact: true })
+    .filter({ visible: true })
+    .first();
+  if (!(await menuItem.isVisible().catch(() => false))) return false;
+
+  await menuItem.click();
+  return true;
+}
+
+/** Закрывает уже открытое меню, чтобы оно не перехватывало клики. */
+async function closeVisibleMenu(page: Page): Promise<void> {
+  const menu = visibleMenu(page);
+  if (!(await menu.isVisible().catch(() => false))) return;
+
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden({ timeout: 5_000 }).catch(() => undefined);
+}
+
 async function openAddMenu(page: Page, item: string): Promise<void> {
   const globalLoading = page
     .locator('[data-qa="LoadingIndicator_Indicator"].controls-loading-indicator_global')
@@ -36,37 +60,40 @@ async function openAddMenu(page: Page, item: string): Promise<void> {
   // После перехода страница Saby ещё инициализируется, и первый клик
   // по «+» может потеряться. Повторяем, пока меню не откроется.
   for (let attempt = 0; attempt < 3; attempt++) {
-    // Если меню уже открыто (например, из-за задержки отрисовки),
-    // повторный клик по «+» перехватывается пунктом меню. Используем его.
-    const existingMenu = visibleMenu(page);
-    if (await existingMenu.isVisible().catch(() => false)) {
-      const existingItem = existingMenu
-        .getByText(item, { exact: true })
-        .filter({ visible: true })
-        .first();
-      if (await existingItem.isVisible().catch(() => false)) {
-        await existingItem.click();
-        return;
-      }
-
-      await page.keyboard.press('Escape');
-      await expect(existingMenu).toBeHidden({ timeout: 5_000 }).catch(() => undefined);
-    }
+    // Меню могло остаться открытым с предыдущего шага.
+    if (await clickMenuItemIfOpen(page, item)) return;
+    await closeVisibleMenu(page);
 
     // Глобальный индикатор загрузки перекрывает кнопку «+».
     await expect(globalLoading)
       .toBeHidden({ timeout: 30_000 })
       .catch(() => undefined);
 
+    // Пока ждали индикатор, меню могло успеть открыться.
+    if (await clickMenuItemIfOpen(page, item)) return;
+    await closeVisibleMenu(page);
+
     const button = addButton(page);
     await expect(button).toBeVisible({ timeout: 30_000 });
-    await button.click();
 
     try {
-      await expect(visibleMenu(page)).toBeVisible({ timeout: 5_000 });
+      await button.click();
+    } catch (error) {
+      // Клик мог быть перехвачен уже открывшимся меню.
+      if (await clickMenuItemIfOpen(page, item)) return;
+      await closeVisibleMenu(page);
+      if (attempt === 2) throw error;
+      continue;
+    }
+
+    try {
+      // Под нагрузкой меню может отрисовываться дольше 5 секунд.
+      await expect(visibleMenu(page)).toBeVisible({ timeout: 30_000 });
       await addMenuItem(page, item).click();
       return;
     } catch (error) {
+      if (await clickMenuItemIfOpen(page, item)) return;
+      await closeVisibleMenu(page);
       if (attempt === 2) throw error;
     }
   }
