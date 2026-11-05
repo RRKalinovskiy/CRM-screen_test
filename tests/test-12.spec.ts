@@ -2,20 +2,31 @@ import { test, expect } from '@playwright/test';
 import {
   cardBody,
   cleanupIndividualWithDocuments,
+  clearDocumentsSearch,
+  closeDocumentEditor,
   createEmptyIndividualCard,
   createSalesDocument,
   deleteAllDocuments,
   deleteCurrentIndividual,
   deleteDocumentByComment,
+  editDocumentComment,
+  expectDocumentCommentValue,
+  expectDocumentFilterState,
+  expectDocumentHidden,
   expectDocumentInList,
   expectDocumentTypesInFilter,
+  expectDocumentVisible,
   expectFilterWithoutDocumentType,
   fillAndSaveDocument,
   fillIndividualMiniCard,
+  filterDocumentsByType,
   openContactByQuery,
   openContacts,
+  openDocumentByComment,
+  resetDocumentFilter,
   SALES_DOCUMENT_TYPES,
   saveMiniIndividualCard,
+  searchDocuments,
   selectIndividualTab,
   type IndividualDraft,
 } from './support/ui';
@@ -111,6 +122,81 @@ test.describe('Документы продаж в карточке ФЛ', () => 
 
     await expectFilterWithoutDocumentType(page, invoice.filterTitle);
 
+    await deleteCurrentIndividual(page);
+    createdQuery = undefined;
+    await expect(
+      page.getByText(draft.lastName, { exact: false }).filter({ visible: true }),
+    ).toHaveCount(0, { timeout: 60_000 });
+  });
+
+  test('Фильтрует документы по типу, ищет по комментарию и сохраняет изменения', async ({
+    page,
+  }) => {
+    test.setTimeout(360_000);
+    const suffix = uniqueSuffix();
+    const draft = makeDraft(suffix);
+    const invoice = SALES_DOCUMENT_TYPES[0];
+    const order = SALES_DOCUMENT_TYPES[1];
+    const invoiceComment = `АТ ${invoice.listTitle} ${suffix}`;
+    const orderComment = `АТ ${order.listTitle} ${suffix}`;
+    const editedComment = `АТ ${invoice.listTitle} изменён ${suffix}`;
+    createdQuery = draft.lastName;
+
+    await openContacts(page);
+    await createEmptyIndividualCard(page);
+    await fillIndividualMiniCard(page, draft);
+    await saveMiniIndividualCard(page);
+    await openContactByQuery(page, draft.lastName);
+    await selectIndividualTab(page, 'tabpurchases');
+
+    await createSalesDocument(page, invoice);
+    await fillAndSaveDocument(page, invoiceComment);
+    await createSalesDocument(page, order);
+    await fillAndSaveDocument(page, orderComment);
+
+    await expectDocumentInList(page, invoice, invoiceComment);
+    await expectDocumentInList(page, order, orderComment);
+
+    // Фильтр по типу счёта оставляет только счёт.
+    await filterDocumentsByType(page, invoice);
+    await expectDocumentVisible(page, invoiceComment);
+    await expectDocumentHidden(page, orderComment);
+
+    // Фильтр по типу заказа оставляет только заказ.
+    await filterDocumentsByType(page, order);
+    await expectDocumentVisible(page, orderComment);
+    await expectDocumentHidden(page, invoiceComment);
+
+    // «Все» сбрасывает фильтр и возвращает оба документа.
+    await resetDocumentFilter(page);
+    await expectDocumentVisible(page, invoiceComment);
+    await expectDocumentVisible(page, orderComment);
+
+    // Поиск по комментарию оставляет только счёт.
+    await searchDocuments(page, invoiceComment);
+    await expectDocumentVisible(page, invoiceComment);
+    await expectDocumentHidden(page, orderComment);
+    await clearDocumentsSearch(page);
+    await expectDocumentVisible(page, orderComment);
+
+    // Редактирование комментария сохранённого документа.
+    await editDocumentComment(page, invoiceComment, editedComment);
+    await expectDocumentVisible(page, editedComment);
+    await expectDocumentHidden(page, invoiceComment);
+
+    // Повторное открытие подтверждает, что изменение сохранилось.
+    await openDocumentByComment(page, editedComment);
+    await expectDocumentCommentValue(page, editedComment);
+    await closeDocumentEditor(page);
+
+    // После удаления счёта его тип пропадает из фильтра, заказ остаётся.
+    await deleteDocumentByComment(page, editedComment);
+    await expectDocumentHidden(page, editedComment);
+    await expectDocumentFilterState(page, ['Документы', order.filterTitle], [
+      invoice.filterTitle,
+    ]);
+
+    await deleteDocumentByComment(page, orderComment);
     await deleteCurrentIndividual(page);
     createdQuery = undefined;
     await expect(

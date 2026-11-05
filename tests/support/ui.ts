@@ -894,9 +894,21 @@ export async function expectDocumentInList(
 
 /** Открывает всплывающий фильтр списка документов и ждёт его загрузки. */
 export async function openDocumentsFilter(page: Page): Promise<Locator> {
-  const filter = cardBody(page).locator('[title="Фильтр"]').filter({ visible: true }).first();
-  await expect(filter).toBeVisible();
-  await filter.click();
+  const body = cardBody(page);
+  const filter = body.locator('[title="Фильтр"]').filter({ visible: true }).first();
+
+  if (await filter.isVisible().catch(() => false)) {
+    await filter.click();
+  } else {
+    // При активном фильтре кнопка «Фильтр» скрыта, а вместо неё показан
+    // чип с названием выбранного типа. Клик по чипу снова открывает попап.
+    const chip = body
+      .locator('.layout-Browser__filter-wrapper .controls-FilterView__text-wrapper')
+      .filter({ visible: true })
+      .first();
+    await expect(chip).toBeVisible();
+    await chip.click();
+  }
 
   const popup = page
     .locator('[templateforlog="EDO3/filterPopup:SimplePanel"]')
@@ -947,6 +959,173 @@ export async function expectFilterWithoutDocumentType(
     `В фильтре не должен отображаться тип документа «${absentTitle}»`,
   ).toHaveCount(0);
   await closeDocumentsFilter(page);
+}
+
+/** Проверяет одновременно наличие одних типов и отсутствие других. */
+export async function expectDocumentFilterState(
+  page: Page,
+  present: string[],
+  absent: string[],
+): Promise<void> {
+  const popup = await openDocumentsFilter(page);
+  for (const title of present) {
+    await expect(
+      popup.getByText(title, { exact: true }).filter({ visible: true }).first(),
+      `В фильтре не отображается тип документа «${title}»`,
+    ).toBeVisible();
+  }
+  for (const title of absent) {
+    await expect(
+      popup.getByText(title, { exact: true }).filter({ visible: true }),
+      `В фильтре не должен отображаться тип документа «${title}»`,
+    ).toHaveCount(0);
+  }
+  await closeDocumentsFilter(page);
+}
+
+/** Выбирает тип документа в фильтре и проверяет появившийся чип. */
+export async function filterDocumentsByType(
+  page: Page,
+  type: SalesDocumentType,
+): Promise<void> {
+  const popup = await openDocumentsFilter(page);
+  const item = popup.getByText(type.filterTitle, { exact: true }).filter({ visible: true }).first();
+  await expect(item).toBeVisible();
+  await item.click();
+  await expect(popup).toBeHidden({ timeout: 10_000 });
+
+  await expect(
+    cardBody(page)
+      .locator('.layout-Browser__filter-wrapper')
+      .getByText(type.filterTitle, { exact: true })
+      .filter({ visible: true })
+      .first(),
+  ).toBeVisible();
+}
+
+/** Сбрасывает фильтр документов через пункт «Все». */
+export async function resetDocumentFilter(page: Page): Promise<void> {
+  const popup = await openDocumentsFilter(page);
+  const all = popup.getByText('Все', { exact: true }).filter({ visible: true }).first();
+  await expect(all).toBeVisible();
+  await all.click();
+  await expect(popup).toBeHidden({ timeout: 10_000 });
+  await expect(
+    cardBody(page).locator('[title="Фильтр"]').filter({ visible: true }).first(),
+  ).toBeVisible();
+}
+
+/** Ищет документ по комментарию через поиск списка. */
+export async function searchDocuments(page: Page, query: string): Promise<void> {
+  const search = cardBody(page)
+    .locator('.crm_EventsAndDocuments__searchString input')
+    .filter({ visible: true })
+    .first();
+  await expect(search).toBeVisible();
+  await search.fill(query);
+  await expect(
+    cardBody(page).getByText(query, { exact: true }).filter({ visible: true }).first(),
+  ).toBeVisible({ timeout: 15_000 });
+}
+
+/** Очищает поиск списка документов. */
+export async function clearDocumentsSearch(page: Page): Promise<void> {
+  const body = cardBody(page);
+  const reset = body
+    .locator('.crm_EventsAndDocuments__searchString [title="Очистить"]')
+    .filter({ visible: true })
+    .first();
+
+  if (await reset.isVisible().catch(() => false)) {
+    await reset.click();
+  } else {
+    const search = body
+      .locator('.crm_EventsAndDocuments__searchString input')
+      .filter({ visible: true })
+      .first();
+    await search.fill('');
+    await search.press('Enter');
+  }
+
+  await expect(body.locator('[title="Фильтр"]').filter({ visible: true }).first()).toBeVisible();
+}
+
+/** Проверяет, что комментарий документа виден в списке. */
+export async function expectDocumentVisible(page: Page, comment: string): Promise<void> {
+  await expect(
+    cardBody(page).getByText(comment, { exact: true }).filter({ visible: true }).first(),
+  ).toBeVisible();
+}
+
+/** Проверяет, что документа с таким комментарием нет в списке. */
+export async function expectDocumentHidden(page: Page, comment: string): Promise<void> {
+  await expect(
+    cardBody(page).getByText(comment, { exact: true }).filter({ visible: true }),
+  ).toHaveCount(0);
+}
+
+/** Редактирует комментарий сохранённого документа и проверяет сохранение. */
+export async function editDocumentComment(
+  page: Page,
+  oldComment: string,
+  newComment: string,
+): Promise<void> {
+  const body = cardBody(page);
+  await expectDocumentVisible(page, oldComment);
+
+  await body.locator('[data-qa="row"]').filter({ hasText: oldComment }).first().click();
+  const editor = documentEditor(page);
+  await expect(editor).toBeVisible({ timeout: 30_000 });
+
+  const commentField = editor.locator('textarea').filter({ visible: true }).first();
+  await expect(commentField).toHaveValue(oldComment);
+
+  // Обычный fill в Saby-поле дописывает текст к модели, поэтому
+  // выделяем старое значение и вводим новое как пользователь.
+  await commentField.click();
+  await commentField.selectText();
+  await commentField.press('Backspace');
+  await commentField.pressSequentially(newComment, { delay: 10 });
+  await expect(commentField).toHaveValue(newComment);
+  await commentField.blur();
+
+  const save = editor
+    .locator('[data-qa="edo3-ReadOnlyStateTemplate__saveButton"], [title="Сохранить"]')
+    .filter({ visible: true })
+    .first();
+  await expect(save).toBeVisible();
+  await expect(save).toBeEnabled();
+  await save.click();
+
+  await expect(
+    body.getByText(newComment, { exact: true }).filter({ visible: true }).first(),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(editor).toBeHidden({ timeout: 30_000 });
+}
+
+/** Открывает сохранённый документ по комментарию. */
+export async function openDocumentByComment(page: Page, comment: string): Promise<void> {
+  await cardBody(page)
+    .locator('[data-qa="row"]')
+    .filter({ hasText: comment })
+    .first()
+    .click();
+  await expect(documentEditor(page)).toBeVisible({ timeout: 30_000 });
+}
+
+/** Проверяет значение комментария в открытом редакторе документа. */
+export async function expectDocumentCommentValue(page: Page, comment: string): Promise<void> {
+  const field = documentEditor(page).locator('textarea').filter({ visible: true }).first();
+  await expect(field).toHaveValue(comment);
+}
+
+/** Закрывает редактор документа, не закрывая карточку ФЛ. */
+export async function closeDocumentEditor(page: Page): Promise<void> {
+  const editor = documentEditor(page);
+  const close = editor.locator('[title="Закрыть"]').filter({ visible: true }).first();
+  await expect(close).toBeVisible();
+  await close.click();
+  await expect(editor).toBeHidden({ timeout: 30_000 });
 }
 
 async function deleteDocumentRow(page: Page, row: Locator): Promise<void> {
@@ -1018,6 +1197,10 @@ export async function cleanupIndividualWithDocuments(
   await expect(cardBody(page)).toContainText(CARD_READY);
 
   await selectIndividualTab(page, 'tabpurchases');
+  // Снимаем фильтр и поиск, иначе очистка увидит только часть документов.
+  await closeDocumentsFilter(page).catch(() => undefined);
+  await resetDocumentFilter(page).catch(() => undefined);
+  await clearDocumentsSearch(page).catch(() => undefined);
   await deleteAllDocuments(page);
 
   await deleteCurrentIndividual(page);
