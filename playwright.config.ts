@@ -12,7 +12,10 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 1,
-  workers: process.env.CI ? 1 : 2,
+  // Mutating-сценарии создают уникальные ФЛ/темы и убирают их за собой,
+  // поэтому несколько воркеров не конфликтуют по данным и заметно
+  // сокращают общее время. В CI 3 воркера, локально — 4.
+  workers: process.env.CI ? 3 : 4,
   timeout: 60_000,
   // В CI дополнительно включаем github-reporter: ошибки попадают
   // в аннотации GitHub Actions, а не только в HTML-отчёт.
