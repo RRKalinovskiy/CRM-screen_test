@@ -263,13 +263,29 @@ export async function expectNewCardTabBuilt(
 
 /** Закрывает новую карточку. */
 export async function closeNewCard(page: Page): Promise<void> {
-  const close = newCardPopup(page)
-    .locator('[data-qa="controls-stack-Button__close"]')
-    .filter({ visible: true })
-    .first();
-  await expect(close).toBeVisible({ timeout: 30_000 });
-  await close.click();
-  await expect(newCardRoot(page)).toBeHidden({ timeout: 30_000 });
+  const root = newCardRoot(page);
+
+  // После смены режима карточка может ещё перерисовываться, и первый клик
+  // по «Закрыть» иногда теряется. Повторяем, пока попап не исчезнет.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const close = newCardPopup(page)
+      .locator('[data-qa="controls-stack-Button__close"]')
+      .filter({ visible: true })
+      .first();
+    if (!(await close.isVisible().catch(() => false))) break;
+
+    await close.click();
+    try {
+      await expect(root).toBeHidden({ timeout: 5_000 });
+      return;
+    } catch (error) {
+      if (attempt === 2) throw error;
+      console.warn('[new-card] карточка не закрылась с первого клика, повторяю');
+      await page.waitForTimeout(500);
+    }
+  }
+
+  await expect(root).toBeHidden({ timeout: 30_000 });
 }
 
 /** Повторно открывает карточку после закрытия. */
