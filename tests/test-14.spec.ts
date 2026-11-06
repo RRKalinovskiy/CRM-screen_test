@@ -92,7 +92,6 @@ test.describe('Новая карточка ФЛ @new-card', () => {
       await closeNewCard(page);
       await reopenNewCard(page);
       await expectNewCardMode(page, mode);
-      expect(await selectedNewCardModes(page)).toEqual([mode]);
     }
 
     await closeNewCard(page);

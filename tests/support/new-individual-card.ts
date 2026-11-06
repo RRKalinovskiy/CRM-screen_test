@@ -136,8 +136,9 @@ export async function openNewCardModeMenu(page: Page): Promise<Locator> {
       return menu;
     } catch (error) {
       if (attempt === 2) throw error;
+      // Не нажимаем Escape: если меню не открылось, Escape закроет карточку.
       console.warn('[new-card] меню режимов не открылось, повторяю клик');
-      await page.keyboard.press('Escape').catch(() => undefined);
+      if (await menu.isVisible().catch(() => false)) return menu;
       await page.waitForTimeout(500);
     }
   }
