@@ -332,9 +332,11 @@ export async function createEmptyNewCardIndividual(
   await createEmptyIndividualCard(page);
 
   const card = miniCard(page);
-  const firstNameInput = card.locator('input').filter({ visible: true }).first();
-  await expect(firstNameInput).toBeVisible();
-  await firstNameInput.fill(lastName);
+  // Первое поле мини-карточки — фамилия; ищем его по стабильному классу,
+  // потому что обычный input.first() может попасть в служебное поле.
+  const lastNameInput = card.locator('input.Name-Input__field_lastName');
+  await expect(lastNameInput).toBeVisible({ timeout: 30_000 });
+  await lastNameInput.fill(lastName);
 
   const save = card.getByTitle('Сохранить').filter({ visible: true }).first();
   await expect(save).toBeVisible();
