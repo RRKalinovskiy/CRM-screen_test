@@ -5,6 +5,7 @@ import {
   NEW_CARD_PERSON,
   NEW_CARD_TABS_BY_MODE,
   closeNewCard,
+  countNewCardSalesRows,
   createEmptyNewCardIndividual,
   deleteNewCardIndividual,
   dragNewCardToWidth,
@@ -13,8 +14,11 @@ import {
   expectNewCardTabBuilt,
   getNewCardMode,
   newCardModeNames,
+  newCardPeriodPlate,
   newCardRoot,
   newCardTabNames,
+  newCardWidth,
+  openNewCardByLink,
   openNewCardForPerson,
   reopenNewCard,
   selectNewCardMode,
@@ -22,6 +26,7 @@ import {
   selectedNewCardModes,
   type NewCardTab,
 } from './support/new-individual-card';
+import { copyIndividualCardLink } from './support/ui';
 
 test.use({ storageState: CARD_STORAGE_STATE });
 
@@ -166,5 +171,139 @@ test.describe('Новая карточка ФЛ @new-card', () => {
       await expectNewCardMode(page, mode);
       expect(await selectedNewCardModes(page)).toEqual([mode]);
     }
+  });
+
+  test('Не меняет ширину при переключении вкладок в режиме «Справа» после открытия по ссылке', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(240_000);
+    await openNewCardForPerson(page);
+
+    const link = await copyIndividualCardLink(page);
+    const newPage = await openNewCardByLink(context, link);
+
+    try {
+      await selectNewCardMode(newPage, 'Справа');
+      const width = await newCardWidth(newPage);
+
+      for (const tab of NEW_CARD_TABS_BY_MODE['Справа']) {
+        await selectNewCardTab(newPage, 'Справа', tab);
+        expect(Math.abs((await newCardWidth(newPage)) - width)).toBeLessThanOrEqual(1);
+      }
+    } finally {
+      await newPage.close();
+    }
+  });
+
+  test('При максимальной ширине включает «Колонки» и обновляет маркер', async ({ page }) => {
+    test.setTimeout(180_000);
+    await openNewCardForPerson(page);
+    await selectNewCardMode(page, 'Справа');
+
+    await dragNewCardToWidth(page, 1200);
+    await expect.poll(() => getNewCardMode(page), { timeout: 15_000 }).toBe('Колонки');
+
+    expect(await newCardWidth(page)).toBeGreaterThan(1000);
+    expect(await selectedNewCardModes(page)).toEqual(['Колонки']);
+  });
+
+  test('Плашка периода в продажах не перекрывает правый список', async ({ page }) => {
+    test.setTimeout(180_000);
+    await openNewCardForPerson(page);
+    await selectNewCardMode(page, 'Справа');
+    await selectNewCardTab(page, 'Справа', 'Покупки');
+
+    const period = newCardPeriodPlate(page);
+    await expect(period).toBeVisible();
+
+    const periodBox = await period.boundingBox();
+    const masterBox = await newCardRoot(page)
+      .locator('.controls-MasterDetail_master')
+      .first()
+      .boundingBox();
+    const detailBox = await newCardRoot(page)
+      .locator('.controls-MasterDetail_details')
+      .first()
+      .boundingBox();
+    if (!periodBox || !masterBox || !detailBox) {
+      throw new Error('Не удалось прочитать геометрию плашки периода');
+    }
+
+    // Плашка остаётся внутри блока продаж и не заходит на правый список вкладок.
+    expect(periodBox.x).toBeGreaterThanOrEqual(detailBox.x);
+    expect(periodBox.x + periodBox.width).toBeLessThanOrEqual(
+      detailBox.x + detailBox.width + 1,
+    );
+    expect(periodBox.x + periodBox.width).toBeLessThanOrEqual(masterBox.x);
+    expect(await countNewCardSalesRows(page)).toBe(20);
+  });
+
+  test('Не уменьшает карточку ниже 600px в режиме «Справа»', async ({ page }) => {
+    test.setTimeout(180_000);
+    await openNewCardForPerson(page);
+    await selectNewCardMode(page, 'Справа');
+
+    await dragNewCardToWidth(page, 600);
+    await expect
+      .poll(() => newCardWidth(page), { timeout: 15_000 })
+      .toBeGreaterThanOrEqual(599);
+    const widthAtMin = await newCardWidth(page);
+    expect(widthAtMin).toBeLessThanOrEqual(601);
+
+    await selectNewCardTab(page, 'Справа', 'О клиенте');
+    expect(await newCardWidth(page)).toBe(widthAtMin);
+
+    // Дальнейшее перетаскивание вправо не должно уменьшать карточку ниже минимума.
+    await dragNewCardToWidth(page, 400);
+    await page.waitForTimeout(500);
+    expect(await newCardWidth(page)).toBe(widthAtMin);
+    await expectNewCardMode(page, 'Справа');
+    await expect(newCardRoot(page)).toContainText('Гражданство');
+  });
+
+  test('Не дублирует загрузку продаж при переключении режимов', async ({ page }) => {
+    test.setTimeout(240_000);
+    const salesListRequests: string[] = [];
+    page.on('request', (request) => {
+      const body = request.postData() ?? '';
+      if (
+        body.includes('CRMActivity.listWithDocumentsEDO') &&
+        body.includes('WithoutListEvents')
+      ) {
+        salesListRequests.push(body);
+      }
+    });
+
+    await openNewCardForPerson(page);
+    await page.waitForTimeout(1_000);
+    const baseline = salesListRequests.length;
+
+    await selectNewCardMode(page, 'В строку');
+    await selectNewCardTab(page, 'В строку', 'Покупки');
+    await expect
+      .poll(() => salesListRequests.length - baseline, { timeout: 15_000 })
+      .toBe(1);
+    expect(await countNewCardSalesRows(page)).toBe(20);
+
+    await selectNewCardMode(page, 'Справа');
+    await selectNewCardTab(page, 'Справа', 'Покупки');
+    await expect
+      .poll(() => salesListRequests.length - baseline, { timeout: 15_000 })
+      .toBe(2);
+    expect(await countNewCardSalesRows(page)).toBe(20);
+
+    await selectNewCardMode(page, 'Колонки');
+    await selectNewCardTab(page, 'Колонки', 'Покупки');
+    await expect
+      .poll(() => salesListRequests.length - baseline, { timeout: 15_000 })
+      .toBe(3);
+    expect(await countNewCardSalesRows(page)).toBe(20);
+
+    // Повторное открытие вкладки не должно вызывать метод ещё раз.
+    await selectNewCardTab(page, 'Колонки', 'Покупки');
+    await page.waitForTimeout(1_000);
+    expect(salesListRequests.length - baseline).toBe(3);
+    expect(await countNewCardSalesRows(page)).toBe(20);
   });
 });

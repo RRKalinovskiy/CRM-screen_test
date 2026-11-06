@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { login } from './auth';
 import {
   CARD_LOGIN,
@@ -100,6 +100,27 @@ export async function openNewCardForPerson(
   await expect(page.locator('.crm_IndividualCardNew__name')).toContainText(personName);
 }
 
+/** Открывает новую карточку по скопированной ссылке в новой вкладке. */
+export async function openNewCardByLink(
+  context: BrowserContext,
+  link: string,
+): Promise<Page> {
+  console.log(`[new-card] открываю по ссылке: ${link}`);
+  const page = await context.newPage();
+  await gotoWithRetry(page, link);
+
+  if (page.url().includes('fix-sso.saby.ru')) {
+    console.warn('[new-card] сессия истекла при открытии ссылки, повторный вход');
+    await login(page, { login: CARD_LOGIN, password: CARD_PASSWORD });
+    await gotoWithRetry(page, link);
+  }
+
+  await expect(newCardRoot(page)).toBeVisible({ timeout: 90_000 });
+  await expect(page.locator('.crm_IndividualCardNew__name')).toContainText(NEW_CARD_PERSON);
+  console.log(`[new-card] карточка по ссылке открыта: ${page.url()}`);
+  return page;
+}
+
 /** Возвращает текущий режим новой карточки по классу контейнера. */
 export async function getNewCardMode(page: Page): Promise<NewCardMode> {
   const root = newCardRoot(page);
@@ -121,11 +142,15 @@ export async function expectNewCardMode(page: Page, mode: NewCardMode): Promise<
 /** Открывает окно «Навигация» со списком режимов. */
 export async function openNewCardModeMenu(page: Page): Promise<Locator> {
   // Кнопку ищем внутри актуальной карточки: после закрытия/открытия в DOM
-  // может остаться старая копия попапа с такой же кнопкой.
-  const button = newCardPopup(page)
+  // может остаться старая копия попапа с такой же кнопкой. Карточка,
+  // открытая по прямой ссылке, может быть не попапом, а страницей.
+  const popupButton = newCardPopup(page)
     .locator('[data-qa="switchView"]')
     .filter({ visible: true })
     .first();
+  const button = (await popupButton.isVisible().catch(() => false))
+    ? popupButton
+    : page.locator('[data-qa="switchView"]').filter({ visible: true }).first();
   await expect(button).toBeVisible({ timeout: 30_000 });
 
   const menu = page.locator('.controls-Menu__popup').filter({ visible: true }).last();
@@ -268,10 +293,13 @@ export async function closeNewCard(page: Page): Promise<void> {
   // После смены режима карточка может ещё перерисовываться, и первый клик
   // по «Закрыть» иногда теряется. Повторяем, пока попап не исчезнет.
   for (let attempt = 0; attempt < 3; attempt++) {
-    const close = newCardPopup(page)
+    const popupClose = newCardPopup(page)
       .locator('[data-qa="controls-stack-Button__close"]')
       .filter({ visible: true })
       .first();
+    const close = (await popupClose.isVisible().catch(() => false))
+      ? popupClose
+      : page.locator('[data-qa="controls-stack-Button__close"]').filter({ visible: true }).first();
     if (!(await close.isVisible().catch(() => false))) break;
 
     await close.click();
@@ -390,4 +418,32 @@ export async function dragNewCardToWidth(page: Page, width: number): Promise<voi
   await page.mouse.move(viewport.width - width, y, { steps: 15 });
   await page.mouse.up();
   await page.waitForTimeout(500);
+}
+
+/** Текущая ширина новой карточки. */
+export async function newCardWidth(page: Page): Promise<number> {
+  const box = await newCardRoot(page).boundingBox();
+  if (!box) throw new Error('Не удалось прочитать ширину новой карточки');
+  return box.width;
+}
+
+/** Строки списка продаж в новой карточке. */
+export function newCardSalesRows(page: Page): Locator {
+  return newCardRoot(page)
+    .locator('.controls-ListView__itemV')
+    .filter({ hasText: 'Счет' })
+    .filter({ visible: true });
+}
+
+/** Количество загруженных строк продаж. */
+export async function countNewCardSalesRows(page: Page): Promise<number> {
+  return newCardSalesRows(page).count();
+}
+
+/** Плашка периода в блоке продаж. */
+export function newCardPeriodPlate(page: Page): Locator {
+  return page
+    .getByText(/За \d{2}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}/)
+    .filter({ visible: true })
+    .first();
 }
