@@ -63,6 +63,15 @@ export function newCardRoot(page: Page): Locator {
   return page.locator('.crm_IndividualCardNew').filter({ visible: true }).first();
 }
 
+/** Актуальный попап новой карточки (после переоткрытия в DOM может быть старый). */
+function newCardPopup(page: Page): Locator {
+  return page
+    .locator('.controls-Popup')
+    .filter({ visible: true })
+    .filter({ has: page.locator('.crm_IndividualCardNew__name') })
+    .last();
+}
+
 /** Открывает реестр контактов под пользователем с фичей новой карточки. */
 export async function openContactsAsCardUser(page: Page): Promise<void> {
   console.log(`[new-card] открываю: ${CONTACTS_URL}`);
@@ -111,13 +120,29 @@ export async function expectNewCardMode(page: Page, mode: NewCardMode): Promise<
 
 /** Открывает окно «Навигация» со списком режимов. */
 export async function openNewCardModeMenu(page: Page): Promise<Locator> {
-  const button = page.locator('[data-qa="switchView"]').filter({ visible: true }).first();
+  // Кнопку ищем внутри актуальной карточки: после закрытия/открытия в DOM
+  // может остаться старая копия попапа с такой же кнопкой.
+  const button = newCardPopup(page)
+    .locator('[data-qa="switchView"]')
+    .filter({ visible: true })
+    .first();
   await expect(button).toBeVisible({ timeout: 30_000 });
-  await button.click();
 
   const menu = page.locator('.controls-Menu__popup').filter({ visible: true }).last();
-  await expect(menu).toBeVisible({ timeout: 30_000 });
-  return menu;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await button.click();
+    try {
+      await expect(menu).toBeVisible({ timeout: 5_000 });
+      return menu;
+    } catch (error) {
+      if (attempt === 2) throw error;
+      console.warn('[new-card] меню режимов не открылось, повторяю клик');
+      await page.keyboard.press('Escape').catch(() => undefined);
+      await page.waitForTimeout(500);
+    }
+  }
+
+  throw new Error('Не удалось открыть меню режимов новой карточки');
 }
 
 /** Читает список режимов из окна «Навигация». */
@@ -237,7 +262,7 @@ export async function expectNewCardTabBuilt(
 
 /** Закрывает новую карточку. */
 export async function closeNewCard(page: Page): Promise<void> {
-  const close = page
+  const close = newCardPopup(page)
     .locator('[data-qa="controls-stack-Button__close"]')
     .filter({ visible: true })
     .first();
