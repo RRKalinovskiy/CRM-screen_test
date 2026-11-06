@@ -36,6 +36,14 @@ export const PASSWORD = process.env.SABY_PASSWORD || 'screencrm!44';
 export const EMPTY_LOGIN = process.env.SABY_EMPTY_LOGIN || 'Пустой44';
 export const EMPTY_PASSWORD = process.env.SABY_EMPTY_PASSWORD || 'пустой44!44';
 
+/**
+ * Пользователь с включённой фичей crm_new_individual. Новая карточка ФЛ
+ * доступна только ему, поэтому для её сценариев нужна отдельная сессия.
+ */
+export const CARD_LOGIN = process.env.SABY_CARD_LOGIN || 'screencrm_card';
+export const CARD_PASSWORD = process.env.SABY_CARD_PASSWORD || 'screencrm_card!44';
+
 /** Файл с cookies/localStorage, который создаётся в global-setup. */
 export const STORAGE_STATE = resolve(__dirname, '../../playwright/.auth/user.json');
 export const EMPTY_STORAGE_STATE = resolve(__dirname, '../../playwright/.auth/empty44.json');
+export const CARD_STORAGE_STATE = resolve(__dirname, '../../playwright/.auth/card.json');

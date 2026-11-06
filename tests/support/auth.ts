@@ -40,6 +40,21 @@ export async function login(
   await signIn.click();
   console.log('[auth] пароль отправлен, ждём рабочую область');
 
+  // Новому пользователю SSO может предложить подтвердить телефон/email.
+  // Шаг можно пропустить; без этого форма не уходит на рабочую область.
+  const skipContacts = page.getByText('Пропустить', { exact: true }).filter({ visible: true }).first();
+  const appWorkspace = page.locator('.sabyPage-MainLayout__workspaceWrapper');
+  await Promise.race([
+    skipContacts
+      .waitFor({ state: 'visible', timeout: 90_000 })
+      .then(async () => {
+        console.log('[auth] пропускаю подтверждение контактов');
+        await skipContacts.click();
+      })
+      .catch(() => undefined),
+    appWorkspace.waitFor({ state: 'visible', timeout: 90_000 }).catch(() => undefined),
+  ]);
+
   await page.waitForURL((url) => url.hostname === 'fix-online.sbis.ru', { timeout: 90_000 });
   console.log(`[auth] после входа: ${page.url()}`);
 }

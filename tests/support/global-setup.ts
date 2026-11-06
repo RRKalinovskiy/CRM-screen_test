@@ -3,6 +3,9 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { login, type Credentials } from './auth';
 import {
+  CARD_LOGIN,
+  CARD_PASSWORD,
+  CARD_STORAGE_STATE,
   EMPTY_LOGIN,
   EMPTY_PASSWORD,
   EMPTY_STORAGE_STATE,
@@ -63,6 +66,7 @@ export default async function globalSetup(): Promise<void> {
   // job'ами: каждому нужна только его сессия.
   const setupMain = process.env.SABY_SETUP_MAIN !== '0';
   const setupEmpty = process.env.SABY_SETUP_EMPTY !== '0';
+  const setupCard = process.env.SABY_SETUP_CARD !== '0';
 
   if (setupMain) {
     await saveStorageState({
@@ -75,6 +79,14 @@ export default async function globalSetup(): Promise<void> {
     await saveStorageState({
       credentials: { login: EMPTY_LOGIN, password: EMPTY_PASSWORD },
       path: EMPTY_STORAGE_STATE,
+      channel: 'chromium',
+    });
+  }
+
+  if (setupCard) {
+    await saveStorageState({
+      credentials: { login: CARD_LOGIN, password: CARD_PASSWORD },
+      path: CARD_STORAGE_STATE,
       channel: 'chromium',
     });
   }

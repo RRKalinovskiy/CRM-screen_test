@@ -65,7 +65,8 @@ test.describe('Карточка темы «Лид» — функциональн
     await openTheme(page);
     await openThemeSection(page, 'Роли и права');
 
-    for (const role of ['Автор', 'Ответственный', 'Руководитель подразделения']) {
+    // На стенде осталось два базовых участника: автор и ответственный.
+    for (const role of ['Автор', 'Ответственный']) {
       await expect(page.getByText(role, { exact: true }).filter({ visible: true }).first()).toBeVisible();
     }
     await expect(page.getByText('Создает документ с этим регламентом', { exact: true })).toBeVisible();
