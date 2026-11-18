@@ -68,27 +68,23 @@ npx playwright test tests/test-16.spec.ts  # карточка темы по сс
 
 ## CI (GitHub Actions)
 
-В `.github/workflows/playwright.yml` три независимых job'а на `windows-latest`:
+В `.github/workflows/playwright.yml` два независимых job'а на `windows-latest`:
 
 - **основной набор** — установка зависимостей, Chromium и все тесты, кроме
-  сценариев с тегом `@empty-user`; сценарии `@new-card` в нём пропускаются,
-  потому что сессия пользователя с фичей не создаётся. В основной набор входят
-  и сценарии `@theme-card` из `tests/test-15.spec.ts`;
+  сценариев с тегом `@empty-user`. В него входят сценарии `@new-card`
+  (`tests/test-14.spec.ts`) под сессией пользователя с фичей
+  `crm_new_individual` и сценарии `@theme-card` из `test-15`/`test-16`;
 - **пустой пользователь** — сценарии с тегом `@empty-user` (сейчас это
   `tests/test-11.spec.ts`): заглушка, физическое лицо, контактное лицо,
-  папка, тег и выборка;
-- **новая карточка ФЛ** — сценарии с тегом `@new-card` (`tests/test-14.spec.ts`)
-  под отдельным пользователем с фичей `crm_new_individual`.
+  папка, тег и выборка.
 
 Job'ы изолированы друг от друга и могут выполняться параллельно.
-Имена проверок в GitHub: `Playwright (Windows)`,
-`Playwright — пустой пользователь (Windows)` и
-`Playwright — новая карточка ФЛ (Windows)`.
+Имена проверок в GitHub: `Playwright (Windows)` и
+`Playwright — пустой пользователь (Windows)`.
 Каждый job публикует свои артефакты:
 
-- `playwright-report` / `test-results` — основной набор;
-- `playwright-report-empty` / `test-results-empty` — сценарии пустого пользователя;
-- `playwright-report-new-card` / `test-results-new-card` — новая карточка ФЛ.
+- `playwright-report` / `test-results` — основной набор, включая новую карточку ФЛ;
+- `playwright-report-empty` / `test-results-empty` — сценарии пустого пользователя.
 
 При падении в лог job'а дополнительно печатается читаемая сводка
 `test-results/failure-summary.md`: для каждого упавшего теста — название,
@@ -103,10 +99,10 @@ screenshot/trace. Эта же сводка добавляется в `GITHUB_STE
 
 Секреты для доступа к тестовому стенду задаются в настройках репозитория.
 Их имена и значения не публикуются в README; необходимый набор описан в
-`.github/workflows/playwright.yml`. Job'ы пустого пользователя и новой карточки
+`.github/workflows/playwright.yml`. Основной job и job пустого пользователя
 запускают полный Chromium: headless-shell не проходит проверку отпечатка
 устройства в SSO Saby. Если стенд Saby доступен только из корпоративной сети,
-замените `runs-on: windows-latest` на метку self-hosted Windows-раннера во всех
+замените `runs-on: windows-latest` на метку self-hosted Windows-раннера в обоих
 job'ах.
 
 ## Доступ к стенду и тестовые данные
