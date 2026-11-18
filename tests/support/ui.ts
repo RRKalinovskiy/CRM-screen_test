@@ -64,7 +64,7 @@ export async function dismissNotifications(page: Page): Promise<void> {
   }
 }
 
-const THEME_SECTION_MARKERS: Record<string, string | RegExp> = {
+export const THEME_SECTION_MARKERS: Record<string, string | RegExp> = {
   'Воронка продаж': 'Этапы',
   'Документы и формы': 'Печатные формы',
   'Шаблоны отправки': /Ускорьте работу и исключите ошибки менеджера/,

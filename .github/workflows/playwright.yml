@@ -16,7 +16,7 @@ jobs:
   test:
     name: Playwright (Windows)
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     env:
       CI: true
@@ -59,6 +59,11 @@ jobs:
         if: failure()
         shell: pwsh
         run: |
+          $summary = 'test-results/failure-summary.md'
+          if (Test-Path $summary) {
+            Write-Host "===== failure-summary.md ====="
+            Get-Content -Path $summary -Encoding utf8
+          }
           $files = Get-ChildItem -Path test-results -Recurse -Filter error-context.md -ErrorAction SilentlyContinue
           if (-not $files) {
             Write-Host "error-context.md не найден. Смотрите ошибку Playwright выше и артефакты test-results."
@@ -146,6 +151,11 @@ jobs:
         if: failure()
         shell: pwsh
         run: |
+          $summary = 'test-results/failure-summary.md'
+          if (Test-Path $summary) {
+            Write-Host "===== failure-summary.md ====="
+            Get-Content -Path $summary -Encoding utf8
+          }
           $files = Get-ChildItem -Path test-results -Recurse -Filter error-context.md -ErrorAction SilentlyContinue
           if (-not $files) {
             Write-Host "error-context.md не найден. Смотрите ошибку Playwright выше и артефакты test-results."
@@ -232,6 +242,11 @@ jobs:
         if: failure()
         shell: pwsh
         run: |
+          $summary = 'test-results/failure-summary.md'
+          if (Test-Path $summary) {
+            Write-Host "===== failure-summary.md ====="
+            Get-Content -Path $summary -Encoding utf8
+          }
           $files = Get-ChildItem -Path test-results -Recurse -Filter error-context.md -ErrorAction SilentlyContinue
           if (-not $files) {
             Write-Host "error-context.md не найден. Смотрите ошибку Playwright выше и артефакты test-results."

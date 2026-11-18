@@ -20,7 +20,12 @@ export default defineConfig({
   // В CI дополнительно включаем github-reporter: ошибки попадают
   // в аннотации GitHub Actions, а не только в HTML-отчёт.
   reporter: process.env.CI
-    ? [['list'], ['github'], ['html', { open: 'never' }]]
+    ? [
+        ['list'],
+        ['github'],
+        ['./tests/support/failure-reporter.ts'],
+        ['html', { open: 'never' }],
+      ]
     : [['list'], ['html', { open: 'never' }]],
 
   globalSetup: './tests/support/global-setup.ts',

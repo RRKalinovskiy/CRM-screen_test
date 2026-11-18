@@ -11,6 +11,7 @@ export const AUTH_URL =
 
 export const CONTACTS_URL = `${APP_ORIGIN}/page/crm-unified-contacts`;
 export const CLIENTS_URL = `${APP_ORIGIN}/page/crm-clients`;
+export const DEALS_URL = `${APP_ORIGIN}/page/crm-deals`;
 export const LOANS_URL = `${APP_ORIGIN}/page/loans-and-credits`;
 
 export const THEME_UUID =
