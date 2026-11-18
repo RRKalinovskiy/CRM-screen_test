@@ -1,10 +1,6 @@
 import { expect, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { login } from './auth';
-import {
-  CARD_LOGIN,
-  CARD_PASSWORD,
-  CONTACTS_URL,
-} from './constants';
+import { CONTACTS_URL } from './constants';
 import {
   createEmptyIndividualCard,
   dismissNotifications,
@@ -72,14 +68,14 @@ function newCardPopup(page: Page): Locator {
     .last();
 }
 
-/** Открывает реестр контактов под пользователем с фичей новой карточки. */
-export async function openContactsAsCardUser(page: Page): Promise<void> {
+/** Открывает реестр контактов для сценариев новой карточки. */
+export async function openContactsForNewCard(page: Page): Promise<void> {
   console.log(`[new-card] открываю: ${CONTACTS_URL}`);
   await gotoWithRetry(page, CONTACTS_URL);
 
   if (page.url().includes('fix-sso.saby.ru')) {
     console.warn('[new-card] сессия истекла, повторный вход');
-    await login(page, { login: CARD_LOGIN, password: CARD_PASSWORD });
+    await login(page);
     await gotoWithRetry(page, CONTACTS_URL);
   }
 
@@ -92,7 +88,7 @@ export async function openNewCardForPerson(
   page: Page,
   personName = NEW_CARD_PERSON,
 ): Promise<void> {
-  await openContactsAsCardUser(page);
+  await openContactsForNewCard(page);
   const person = page.getByText(personName, { exact: true }).filter({ visible: true }).first();
   await expect(person).toBeVisible({ timeout: 30_000 });
   await person.click();
@@ -111,7 +107,7 @@ export async function openNewCardByLink(
 
   if (page.url().includes('fix-sso.saby.ru')) {
     console.warn('[new-card] сессия истекла при открытии ссылки, повторный вход');
-    await login(page, { login: CARD_LOGIN, password: CARD_PASSWORD });
+    await login(page);
     await gotoWithRetry(page, link);
   }
 
@@ -323,7 +319,7 @@ export async function reopenNewCard(
 ): Promise<void> {
   let person = page.getByText(personName, { exact: true }).filter({ visible: true }).first();
   if (!(await person.isVisible().catch(() => false))) {
-    await openContactsAsCardUser(page);
+    await openContactsForNewCard(page);
     person = page.getByText(personName, { exact: true }).filter({ visible: true }).first();
   }
 
@@ -356,7 +352,7 @@ export async function createEmptyNewCardIndividual(
   page: Page,
   lastName: string,
 ): Promise<void> {
-  await openContactsAsCardUser(page);
+  await openContactsForNewCard(page);
   await createEmptyIndividualCard(page);
 
   const card = miniCard(page);
@@ -380,7 +376,7 @@ export async function deleteNewCardIndividual(
   page: Page,
   personName: string,
 ): Promise<void> {
-  await openContactsAsCardUser(page);
+  await openContactsForNewCard(page);
   const person = page.getByText(personName, { exact: true }).filter({ visible: true }).first();
   if (!(await person.isVisible().catch(() => false))) return;
 

@@ -22,10 +22,7 @@ jobs:
       CI: true
       SABY_LOGIN: ${{ secrets.SABY_LOGIN }}
       SABY_PASSWORD: ${{ secrets.SABY_PASSWORD }}
-      SABY_CARD_LOGIN: ${{ secrets.SABY_CARD_LOGIN }}
-      SABY_CARD_PASSWORD: ${{ secrets.SABY_CARD_PASSWORD }}
-      # Основному набору нужна сессия пользователя с фичей новой карточки;
-      # сессия пустого пользователя не нужна.
+      # Основному набору не нужна сессия пустого пользователя.
       SABY_SETUP_EMPTY: '0'
 
     steps:
@@ -113,10 +110,8 @@ jobs:
       CI: true
       SABY_EMPTY_LOGIN: ${{ secrets.SABY_EMPTY_LOGIN }}
       SABY_EMPTY_PASSWORD: ${{ secrets.SABY_EMPTY_PASSWORD }}
-      # Этому job'у не нужны сессии основного пользователя и пользователя
-      # с фичей новой карточки.
+      # Этому job'у не нужна сессия основного пользователя.
       SABY_SETUP_MAIN: '0'
-      SABY_SETUP_CARD: '0'
 
     steps:
       - name: Checkout

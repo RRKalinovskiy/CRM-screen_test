@@ -1,5 +1,4 @@
 import { expect, test } from '@playwright/test';
-import { CARD_STORAGE_STATE } from './support/constants';
 import {
   NEW_CARD_MODES,
   NEW_CARD_PERSON,
@@ -28,20 +27,12 @@ import {
 } from './support/new-individual-card';
 import { copyIndividualCardLink } from './support/ui';
 
-test.use({ storageState: CARD_STORAGE_STATE });
-
-// Сессия пользователя с фичей создаётся в основном CI-job'е.
-test.skip(
-  process.env.SABY_SETUP_CARD === '0',
-  'Сценарии новой карточки требуют сессии пользователя с фичей',
-);
-
 /**
  * Новая карточка ФЛ под фичей crm_new_individual.
  *
- * Сценарии работают под тестовым пользователем с включённой фичей.
- * Оригинальный контакт «Проверка Карточки Физика» не изменяется;
- * пустая карточка создаётся и удаляется внутри сценария.
+ * Фича включена для всех пользователей, поэтому сценарии выполняются
+ * в основной сессии. Оригинальный контакт «Проверка Карточки Физика»
+ * не изменяется; пустая карточка создаётся и удаляется внутри сценария.
  */
 test.describe.configure({ mode: 'serial' });
 
