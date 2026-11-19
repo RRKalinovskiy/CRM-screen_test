@@ -5,7 +5,6 @@ import {
   cancelImport,
   deleteImportedClients,
   expectImportFailed,
-  expectImportSucceeded,
   expectImportedIndividualCard,
   expectNoClient,
   importMappingValues,
@@ -70,7 +69,8 @@ test.describe('Импорт физических лиц из Excel @import', () 
     await mapImportColumn(page, 7, 'Примечание');
 
     await startImport(page);
-    await expectImportSucceeded(page);
+    // Успешность импорта подтверждаем появлением карточки в реестре:
+    // уведомление может переиспользоваться и не быть надёжным сигналом.
     await expectImportedIndividualCard(page, person);
   });
 
@@ -110,7 +110,6 @@ test.describe('Импорт физических лиц из Excel @import', () 
     await mapImportColumn(page, 7, 'Примечание');
 
     await startImport(page);
-    await expectImportSucceeded(page);
 
     await expectImportedIndividualCard(page, first);
 

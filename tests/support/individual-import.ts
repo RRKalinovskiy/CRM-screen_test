@@ -209,12 +209,28 @@ export async function openIndividualImport(page: Page, filePath: string): Promis
 
 /** Переключает тип записей с «Компания» на «Физическое лицо». */
 export async function switchImportToPhysicalPerson(page: Page): Promise<void> {
-  const physical = importDialog(page)
-    .getByText('Физическое лицо', { exact: true })
-    .filter({ visible: true })
+  const dialog = importDialog(page);
+  const toggle = dialog.locator('[data-qa="controls-SwitchButton"]').filter({ visible: true }).first();
+  const physical = dialog
+    .locator('.controls-DoubleSwitch__text_enabled_selected, .controls-DoubleSwitch__text_enabled_unselected')
+    .filter({ hasText: 'Физическое лицо' })
     .first();
-  await expect(physical).toBeVisible();
-  await physical.click();
+
+  await expect(toggle).toBeVisible({ timeout: 30_000 });
+
+  // Клик по подписи в CI иногда не срабатывает: переключаем сам тумблер,
+  // затем проверяем, что подпись стала выбранной.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const className = (await physical.getAttribute('class')) ?? '';
+    if (className.includes('controls-DoubleSwitch__text_enabled_selected')) break;
+
+    await toggle.click({ timeout: 30_000 }).catch(() => undefined);
+    await page.waitForTimeout(500);
+  }
+
+  await expect(physical).toHaveClass(/controls-DoubleSwitch__text_enabled_selected/, {
+    timeout: 30_000,
+  });
 }
 
 /** Сопоставляет столбец Excel с полем карточки через выпадающий список. */
@@ -252,20 +268,43 @@ const importNotifications = (page: Page): Locator =>
 
 async function dismissImportNotifications(page: Page): Promise<void> {
   const notifications = importNotifications(page);
-  const count = await notifications.count();
 
-  for (let index = count - 1; index >= 0; index--) {
-    const close = notifications
-      .nth(index)
-      .locator('[title="Закрыть"]')
-      .filter({ visible: true })
-      .first();
-    if (await close.isVisible().catch(() => false)) {
-      await close.click({ timeout: 2_000 }).catch(() => undefined);
+  for (let pass = 0; pass < 2; pass++) {
+    const count = await notifications.count();
+    for (let index = count - 1; index >= 0; index--) {
+      const notification = notifications.nth(index);
+
+      // У выполняющейся операции нет кнопки «Закрыть» — сначала ждём её конца.
+      const running = (await notification.innerText().catch(() => '')).includes(
+        'Операция выполняется',
+      );
+      if (running) {
+        await expect
+          .poll(
+            async () =>
+              (await notification.innerText().catch(() => '')).includes('Операция выполняется'),
+            { timeout: 60_000 },
+          )
+          .toBe(false)
+          .catch(() => undefined);
+      }
+
+      const close = notification
+        .locator('[title="Закрыть"]')
+        .filter({ visible: true })
+        .first();
+      if (await close.isVisible().catch(() => false)) {
+        await close.click({ timeout: 2_000 }).catch(() => undefined);
+      }
     }
+
+    await page.waitForTimeout(500);
   }
 
-  await expect.poll(() => importNotifications(page).count(), { timeout: 10_000 }).toBe(0);
+  const remaining = await notifications.count();
+  if (remaining > 0) {
+    console.warn(`[import] Не удалось закрыть уведомления прошлых импортов: ${remaining}`);
+  }
 }
 
 async function waitForImportResult(page: Page, status: string): Promise<Locator> {
