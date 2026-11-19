@@ -168,12 +168,20 @@ export async function openIndividualImport(page: Page, filePath: string): Promis
 
   const addButton = page.locator('[data-qa="sabyPage-addButton"]').filter({ visible: true }).first();
   await expect(addButton).toBeVisible({ timeout: 30_000 });
-  await addButton.click({ timeout: 60_000 });
 
+  // В CI кнопка «+» иногда не открывает меню с первого клика: приложение
+  // ещё дорисовывает панель. Повторяем клик, пока меню не появится.
   const addMenu = page.locator('.controls-Menu__popup').filter({ visible: true }).first();
-  await expect(addMenu).toBeVisible();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (await addMenu.isVisible().catch(() => false)) break;
+    await waitForNoLoadingOverlay(page);
+    await addButton.click({ timeout: 60_000 }).catch(() => undefined);
+    await expect(addMenu).toBeVisible({ timeout: 15_000 }).catch(() => undefined);
+  }
+  await expect(addMenu).toBeVisible({ timeout: 30_000 });
+
   const upload = addMenu.getByText('Загрузить', { exact: true }).filter({ visible: true }).first();
-  await expect(upload).toBeVisible();
+  await expect(upload).toBeVisible({ timeout: 30_000 });
 
   // «Загрузить» — подменю. Наводим курсор, а если подменю не раскрылось,
   // кликаем: в разных состояниях Saby ведёт себя по-разному.
@@ -300,6 +308,14 @@ async function searchInRegistry(page: Page, query: string): Promise<void> {
   await search.fill(query);
 }
 
+/** Снимает фильтр ответственного/категории, чтобы импортированная запись была видна. */
+async function selectAllFilter(page: Page): Promise<void> {
+  const all = page.getByText('Все', { exact: true }).filter({ visible: true }).first();
+  if (await all.isVisible().catch(() => false)) {
+    await all.click().catch(() => undefined);
+  }
+}
+
 /**
  * Клик по всей строке выделяет запись, но не открывает карточку.
  * Карточку открывает клик по названию/ФИО в главной колонке.
@@ -324,14 +340,37 @@ async function openRowCard(page: Page, row: Locator): Promise<void> {
   await expect(card).toContainText('Параметры', { timeout: 30_000 });
 }
 
-/** Ищет запись в текущем реестре по уникальному значению и открывает карточку. */
+/**
+ * Ищет импортированную запись в «Клиентах», а если список ещё не обновился —
+ * в «Контактных лицах». Возвращает открытую карточку.
+ */
 export async function openImportedClient(page: Page, query: string): Promise<Locator> {
+  await selectAllFilter(page);
   await searchInRegistry(page, query);
 
-  const row = clientRows(page).filter({ hasText: query }).first();
-  await expect(row).toBeVisible({ timeout: 60_000 });
-  await openRowCard(page, row);
+  let row = clientRows(page).filter({ hasText: query }).first();
+  let found = await row
+    .waitFor({ state: 'visible', timeout: 60_000 })
+    .then(() => true)
+    .catch(() => false);
 
+  if (!found) {
+    // Реестр клиентов может обновиться позже контактного реестра.
+    await openContacts(page);
+    await selectAllFilter(page);
+    await searchInRegistry(page, query);
+    row = clientRows(page).filter({ hasText: query }).first();
+    found = await row
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => true)
+      .catch(() => false);
+  }
+
+  if (!found) {
+    throw new Error(`Импортированная запись не найдена ни в клиентах, ни в контактах: ${query}`);
+  }
+
+  await openRowCard(page, row);
   return individualCard(page);
 }
 
@@ -371,6 +410,7 @@ export async function cancelImport(page: Page): Promise<void> {
 
 /** Проверяет, что в текущем реестре нет записи с указанным значением. */
 export async function expectNoClient(page: Page, query: string): Promise<void> {
+  await selectAllFilter(page);
   await searchInRegistry(page, query);
   await expect(clientRows(page).filter({ hasText: query })).toHaveCount(0, { timeout: 15_000 });
 }
@@ -394,6 +434,7 @@ export async function deleteImportedClients(
     // Контактный реестр может обновиться не сразу после импорта: если строки
     // нет, перезагружаем реестр и пробуем ещё раз.
     for (let attempt = 0; attempt < 3 && !deleted; attempt++) {
+      await selectAllFilter(page);
       await searchInRegistry(page, query);
       const row = clientRows(page).filter({ hasText: query }).first();
       const found = await row
