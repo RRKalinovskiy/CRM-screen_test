@@ -8,6 +8,14 @@ export const APP_ORIGIN = process.env.SABY_APP_ORIGIN ?? 'https://test-online.sb
 export const APP_HOST = new URL(APP_ORIGIN).hostname;
 
 /**
+ * Saby отдаёт ссылки на карточки и через алиас saby.ru, а приложение
+ * открывается на sbis.ru. Для проверок ссылок принимаем оба домена.
+ */
+export const APP_ALIAS_ORIGIN =
+  process.env.SABY_APP_ALIAS_ORIGIN ?? APP_ORIGIN.replace('.sbis.ru', '.saby.ru');
+export const APP_LINK_ORIGINS = [APP_ORIGIN, APP_ALIAS_ORIGIN];
+
+/**
  * SSO-страница, на которой всегда показывается форма входа.
  * После успешного входа Saby уводит на APP_HOST.
  */
@@ -22,7 +30,7 @@ export const DEALS_URL = `${APP_ORIGIN}/page/crm-deals`;
 export const LOANS_URL = `${APP_ORIGIN}/page/loans-and-credits`;
 
 export const THEME_UUID =
-  process.env.SABY_THEME_UUID ?? '01a03962-b5ad-787c-a0f4-e78c18ca888a';
+  process.env.SABY_THEME_UUID ?? '5440011c-8d41-11e7-adf1-005056b7473e';
 export const THEME_TYPE = process.env.SABY_THEME_TYPE ?? 'Лид';
 
 export const THEME_URL =

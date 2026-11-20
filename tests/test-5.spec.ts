@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { openTheme, openThemeSection, workspace } from './support/ui';
 import { THEME_TYPE, THEME_UUID } from './support/constants';
+import { THEME_NAME } from './support/theme-mini-card';
 
 const themeSections = [
   'Воронка продаж',
@@ -33,12 +34,19 @@ test.describe('Карточка темы «Лид» — функциональн
   test('Воронка показывает этапы и итоги', async ({ page }) => {
     await openTheme(page);
 
-    for (const label of ['Этапы', 'Итоги', 'Новый', 'Стартовый', 'Подтверждение', 'С настройками', 'Положительно', 'Отрицательно']) {
+    for (const label of [
+      'Этапы',
+      'Итоги',
+      'Новый',
+      'Знакомство',
+      'Коммерческое предложение',
+      'Оплата',
+      'Отгрузка',
+      'Товар доставлен',
+      'Сделка не состоялась',
+    ]) {
       await expect(page.getByText(label, { exact: true }).filter({ visible: true }).first()).toBeVisible();
     }
-
-    // «Обсуждение» встречается и как этап, и как подэтап.
-    await expect(page.getByText('Обсуждение', { exact: true }).filter({ visible: true }).first()).toBeVisible();
   });
 
   test('Параметры показывают тип темы и правила сделки', async ({ page }) => {
@@ -110,7 +118,7 @@ test.describe('Карточка темы «Лид» — функциональн
 
     for (const section of themeSections) {
       await openThemeSection(page, section);
-      await expect(page.getByText('Тема для статистики', { exact: true }).last()).toBeVisible();
+      await expect(page.getByText(THEME_NAME, { exact: true }).last()).toBeVisible();
     }
 
     // Возврат в начало проверяет, что навигация не «залипает» на последнем разделе.

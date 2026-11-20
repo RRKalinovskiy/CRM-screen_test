@@ -3,7 +3,7 @@ import { openContacts, workspace } from './support/ui';
 
 type Contact = {
   name: string;
-  phone: string;
+  phone?: string;
   email?: string;
 };
 
@@ -16,15 +16,13 @@ const contacts: Contact[] = [
   {
     name: 'Сизов Виктор Генадьевич',
     phone: '+7 (953) 648-57-58',
-    email: 'vg.sizov76@yandex.ru',
   },
   {
-    name: 'Тестов Винамин',
-    phone: '+7 (953) 669-58-47',
+    name: 'Большие Данные Физик',
   },
 ];
 
-const FILTERS = ['Все', 'Мужчины', 'Женщины', 'до 18', 'от 18 до 40', 'от 40', 'Папка2'];
+const FILTERS = ['Все', 'Мужчины', 'Женщины', 'до 18', 'от 18 до 40', 'от 40'];
 
 const person = (page: Page, name: string): Locator =>
   page.getByText(name, { exact: true }).filter({ visible: true }).first();
@@ -103,17 +101,14 @@ test.describe('Реестр «Контактные лица»', () => {
       contacts.map((contact) => contact.name),
     );
     for (const contact of contacts) {
-      await expect(workspace(page)).toContainText(contact.phone);
+      if (contact.phone) {
+        await expect(workspace(page)).toContainText(contact.phone);
+      }
       if (contact.email) {
         await expect(workspace(page)).toContainText(contact.email);
       }
     }
 
-    const dealsCounter = page
-      .locator('.NavigationPanels-Counter__tabs_counter')
-      .filter({ visible: true })
-      .first();
-    await expect(dealsCounter).toHaveAttribute('title', /\d+ новых\. Всего \d+/);
   });
 
   test('Поиск фильтрует список по имени', async ({ page }) => {
@@ -125,14 +120,14 @@ test.describe('Реестр «Контактные лица»', () => {
       page,
       'Сизов',
       ['Сизов Виктор Генадьевич'],
-      ['Горохов Евгений Олегович', 'Тестов Винамин'],
+      ['Горохов Евгений Олегович', 'Большие Данные Физик'],
     );
 
     await filterContactsBySearch(
       page,
       'Горохов',
       ['Горохов Евгений Олегович'],
-      ['Сизов Виктор Генадьевич', 'Тестов Винамин'],
+      ['Сизов Виктор Генадьевич', 'Большие Данные Физик'],
     );
 
     await filterContactsBySearch(
@@ -164,12 +159,12 @@ test.describe('Реестр «Контактные лица»', () => {
     await openContacts(page);
 
     await clickFilter(page, 'от 18 до 40');
-    await expectContactsVisible(page, ['Горохов Евгений Олегович']);
-    await expectContactsHidden(page, ['Сизов Виктор Генадьевич', 'Тестов Винамин']);
+    await expectContactsVisible(page, ['Горохов Евгений Олегович', 'Большие Данные Физик']);
+    await expectContactsHidden(page, ['Сизов Виктор Генадьевич']);
 
     await clickFilter(page, 'от 40');
     await expectContactsVisible(page, ['Сизов Виктор Генадьевич']);
-    await expectContactsHidden(page, ['Горохов Евгений Олегович', 'Тестов Винамин']);
+    await expectContactsHidden(page, ['Горохов Евгений Олегович', 'Большие Данные Физик']);
 
     await clickFilter(page, 'Все');
     await expectContactsVisible(

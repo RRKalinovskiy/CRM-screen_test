@@ -3,7 +3,7 @@ import ExcelJS from 'exceljs';
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { CLIENTS_URL } from './constants';
-import { openContacts, openWorkspace } from './ui';
+import { individualCardRoot, openContacts, openWorkspace } from './ui';
 
 /**
  * Хелперы импорта физических лиц из Excel через
@@ -237,15 +237,25 @@ export async function switchImportToPhysicalPerson(page: Page): Promise<void> {
 export async function mapImportColumn(page: Page, index: number, target: string): Promise<void> {
   const dropdown = importMappingDropdowns(page).nth(index);
   await expect(dropdown).toBeVisible();
-  await dropdown.click();
 
-  const menu = page.locator('.controls-Menu__popup').filter({ visible: true }).last();
-  await expect(menu).toBeVisible();
-  const item = menu.getByText(target, { exact: true }).filter({ visible: true }).first();
-  await expect(item).toBeVisible();
-  await item.click();
+  // Saby может автоматически сопоставить столбец, пока тест ждёт загрузку.
+  // Повторный выбор уже применённого поля не нужен и может закрыть меню.
+  if ((await dropdown.innerText()).trim() === target) return;
 
-  await expect(dropdown).toContainText(target);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await dropdown.click({ timeout: 15_000 }).catch(() => undefined);
+    const menu = page.locator('.controls-Menu__popup').filter({ visible: true }).last();
+    if (await menu.isVisible().catch(() => false)) {
+      const item = menu.getByText(target, { exact: true }).filter({ visible: true }).first();
+      await expect(item).toBeVisible();
+      await item.click();
+      await expect(dropdown).toContainText(target);
+      return;
+    }
+    await page.waitForTimeout(300);
+  }
+
+  throw new Error(`Не удалось открыть список полей для столбца ${index}`);
 }
 
 export async function startImport(page: Page): Promise<void> {
@@ -311,6 +321,18 @@ async function waitForImportResult(page: Page, status: string): Promise<Locator>
   const notifications = importNotifications(page);
 
   await expect(notifications.last()).toBeVisible({ timeout: 60_000 });
+
+  // Уведомление переиспользуется: сначала ждём состояние текущей операции,
+  // иначе можно поймать «Есть ошибки» от предыдущего импорта.
+  await expect
+    .poll(
+      async () =>
+        (await notifications.last().innerText().catch(() => '')).includes('Операция выполняется'),
+      { timeout: 15_000, message: 'Текущий импорт не перешёл в состояние выполнения' },
+    )
+    .toBe(true)
+    .catch(() => undefined);
+
   await expect.poll(
     async () => {
       const last = notifications.last();
@@ -334,7 +356,7 @@ export async function expectImportFailed(page: Page): Promise<Locator> {
 }
 
 export function individualCard(page: Page): Locator {
-  return page.locator('.crm_IndividualCard').filter({ visible: true }).first();
+  return individualCardRoot(page);
 }
 
 const clientRows = (page: Page): Locator =>
@@ -376,7 +398,7 @@ async function openRowCard(page: Page, row: Locator): Promise<void> {
 
   const card = individualCard(page);
   await expect(card).toBeVisible({ timeout: 30_000 });
-  await expect(card).toContainText('Параметры', { timeout: 30_000 });
+  await expect(card).toContainText(/Гражданство|Паспорт|Параметры/, { timeout: 30_000 });
 }
 
 /**
@@ -447,11 +469,32 @@ export async function cancelImport(page: Page): Promise<void> {
   await expect(dialog).toBeHidden({ timeout: 30_000 });
 }
 
+/**
+ * Ждёт, пока поиск реально применится и в реестре не останется строк.
+ * Просто toHaveCount(0) сразу после fill может пройти до перерисовки списка.
+ */
+async function expectNoRows(page: Page, query: string): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const rows = await clientRows(page).filter({ hasText: query }).count();
+        if (rows > 0) return 'found';
+        const empty = await page
+          .getByText('Не найдено ни одной записи', { exact: false })
+          .filter({ visible: true })
+          .count();
+        return empty > 0 ? 'empty' : 'pending';
+      },
+      { timeout: 20_000, message: `Запись «${query}» всё ещё отображается в реестре` },
+    )
+    .toBe('empty');
+}
+
 /** Проверяет, что в текущем реестре нет записи с указанным значением. */
 export async function expectNoClient(page: Page, query: string): Promise<void> {
   await selectAllFilter(page);
   await searchInRegistry(page, query);
-  await expect(clientRows(page).filter({ hasText: query })).toHaveCount(0, { timeout: 15_000 });
+  await expectNoRows(page, query);
 }
 
 /**
@@ -504,9 +547,13 @@ export async function deleteImportedClients(
         }
       }
 
-      await expect(clientRows(page).filter({ hasText: query })).toHaveCount(0, {
-        timeout: 60_000,
-      });
+      // Новая карточка после удаления остаётся открытой в состоянии
+      // «Клиент удалён». Перезагружаем реестр и повторяем поиск, чтобы
+      // убедиться, что удалённая строка действительно исчезла.
+      await openContacts(page);
+      await selectAllFilter(page);
+      await searchInRegistry(page, query);
+      await expectNoRows(page, query);
       deleted = true;
     }
   }

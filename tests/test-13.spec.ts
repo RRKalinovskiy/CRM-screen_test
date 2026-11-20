@@ -43,7 +43,9 @@ const uniqueSuffix = (): string =>
  */
 test.describe.configure({ mode: 'serial' });
 
-test.describe('Копирование темы «Проверка СПК»', () => {
+// На стенде test нет темы «Проверка СПК» с этапами, формами и доп. полями,
+// поэтому весь набор копирования пропускается.
+test.describe.skip('Копирование темы «Проверка СПК»', () => {
   let createdThemes: string[] = [];
 
   test.afterEach(async ({ page }) => {

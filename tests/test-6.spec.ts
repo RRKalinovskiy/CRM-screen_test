@@ -1,8 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
-import { APP_ORIGIN } from './support/constants';
+import { APP_LINK_ORIGINS } from './support/constants';
 import {
   cardBody,
   copyIndividualCardLink,
+  ensureWideIndividualCard,
   openContacts,
   openFilledIndividualCard,
   openIndividualCardByLink,
@@ -42,7 +43,7 @@ function cardPath(link: string): string {
  */
 function expectLiveCardLink(link: string): void {
   const url = new URL(link);
-  expect(url.origin).toBe(APP_ORIGIN);
+  expect(APP_LINK_ORIGINS).toContain(url.origin);
   expect(url.pathname).toMatch(/^\/crm\/individual\/card\/[^/]+\/?$/);
   console.log(`[test-6] ссылка на карточку: ${link}`);
 }
@@ -53,6 +54,9 @@ async function openLiveCard(page: Page, client: Client): Promise<void> {
 }
 
 async function expectClientCard(page: Page, client: Client): Promise<void> {
+  // Карточка по ссылке может открыться в режиме «Справа», где контакты
+  // не попадают в текст до переключения в широкий режим.
+  await ensureWideIndividualCard(page);
   const body = cardBody(page);
   // ФИО в карточке разбито на отдельные span-элементы.
   for (const part of client.nameParts) {
@@ -82,7 +86,9 @@ test.describe('Открытие карточки ФЛ по ссылке в но�
       try {
         const expectedPath = cardPath(link);
         await expect(newPage).toHaveURL(
-          (url) => url.origin === APP_ORIGIN && url.pathname.replace(/\/+$/, '') === expectedPath,
+          (url) =>
+            APP_LINK_ORIGINS.includes(url.origin) &&
+            url.pathname.replace(/\/+$/, '') === expectedPath,
         );
         await expectClientCard(newPage, client);
       } finally {
@@ -118,9 +124,7 @@ test.describe('Открытие карточки ФЛ по ссылке в но�
       console.log(`[test-6] новая вкладка: ${newPage.url()}`);
       expectLiveCardLink(newPage.url());
       expect(cardPath(newPage.url())).toBe(cardPath(link));
-      await expect(newPage.locator('.crm_IndividualCard__tabsArea')).toBeVisible({
-        timeout: 90_000,
-      });
+      await expect(cardBody(newPage)).toBeVisible({ timeout: 90_000 });
       await expectClientCard(newPage, client);
     } finally {
       await newPage.close();

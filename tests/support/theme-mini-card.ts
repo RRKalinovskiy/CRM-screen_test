@@ -13,7 +13,7 @@ import { dismissNotifications, openWorkspace, THEME_SECTION_MARKERS } from './ui
  *    карточка сделки → клик по названию темы → список тем и «Сменить тему».
  */
 
-export const THEME_NAME = 'Тема для статистики';
+export const THEME_NAME = 'Продажа товаров и услуг';
 
 export const themeCard = (page: Page): Locator =>
   page.locator('.controls-Popup:has([data-qa="crm_Theme__header"])').last();

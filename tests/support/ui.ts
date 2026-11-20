@@ -7,8 +7,10 @@ import { CONTACTS_URL, LOANS_URL, SSO_HOST, THEME_URL, THEMES_URL } from './cons
 export const workspace = (page: Page): Locator =>
   page.locator('.sabyPage-MainLayout__workspaceWrapper');
 
-export const cardBody = (page: Page): Locator =>
-  page.locator('.sabyPage-EntityLayoutNew__bodyContent');
+export const individualCardRoot = (page: Page): Locator =>
+  page.locator('.crm_IndividualCardNew, .crm_IndividualCard').filter({ visible: true }).first();
+
+export const cardBody = (page: Page): Locator => individualCardRoot(page);
 
 export const miniCard = (page: Page): Locator =>
   page.locator('.PersonCard-MiniCard__container');
@@ -308,12 +310,34 @@ async function waitForStableSize(locator: Locator, page: Page): Promise<void> {
   throw new Error('Размер элемента не стабилизировался за 15 секунд');
 }
 
+/** Фиксирует широкий режим новой карточки, чтобы раскладка не зависела от test-14. */
+export async function ensureWideIndividualCard(page: Page): Promise<void> {
+  const root = individualCardRoot(page);
+  const switchView = page.locator('[data-qa="switchView"]').filter({ visible: true }).first();
+  if (!(await switchView.isVisible().catch(() => false))) return;
+
+  const className = (await root.getAttribute('class')) ?? '';
+  if (className.includes('crm_IndividualCardNew_wide')) return;
+
+  await switchView.click();
+  const menu = page.locator('.controls-Menu__popup').filter({ visible: true }).last();
+  await expect(menu).toBeVisible({ timeout: 10_000 });
+  const wide = menu.getByText('Колонки', { exact: true }).filter({ visible: true }).first();
+  if (await wide.isVisible().catch(() => false)) {
+    await wide.click();
+  } else {
+    await page.keyboard.press('Escape');
+  }
+  await expect(root).toHaveClass(/crm_IndividualCardNew_wide/, { timeout: 30_000 });
+}
+
 /** Из мини-карточки открывает полную карточку ФЛ. */
 export async function openFullIndividualCard(page: Page): Promise<void> {
   await page.getByTitle('Перейти в подробную карточку').click();
-  await expect(page.locator('.crm_IndividualCard__tabsArea')).toBeVisible();
+  await expect(individualCardRoot(page)).toBeVisible();
   await expect(cardBody(page)).toBeVisible();
   await expect(cardBody(page)).toContainText(CARD_READY);
+  await ensureWideIndividualCard(page);
 }
 
 export type IndividualDraft = {
@@ -416,6 +440,14 @@ export async function fillFullIndividualCard(
   const body = cardBody(page);
   const lastNameInput = body.locator('input.Name-Input__field_lastName');
 
+  // Новая карточка может открыться в просмотре — переводим её в редактирование.
+  if (!(await lastNameInput.isVisible().catch(() => false))) {
+    const edit = body.locator('[data-qa="crm_IndividualCard__edit"]').filter({ visible: true }).first();
+    if (await edit.isVisible().catch(() => false)) {
+      await edit.click();
+    }
+  }
+
   // Пока карточка догружается, вместо input может быть span-плейсхолдер.
   // Ждём именно поле ввода, иначе fill падает с «Element is not an <input>».
   await expect(lastNameInput).toBeVisible({ timeout: 30_000 });
@@ -425,27 +457,39 @@ export async function fillFullIndividualCard(
     await body.locator('input.Name-Input__field_middleName').fill(draft.middleName);
   }
 
-  await body.locator('.cd-MultipleInput__field_Value input').fill(draft.phone);
-  if (draft.contactNote) {
-    await body.locator('.cd-MultipleInput__field_Comment input').fill(draft.contactNote);
+  // В новой карточке контакты редактируются отдельным контролом, а не
+  // inline-полем. Если телефон уже заполнен в мини-карточке, здесь его
+  // трогать не нужно; старую разметку поддерживаем для fix-стенда.
+  const phoneInput = body.locator('.cd-MultipleInput__field_Value input').first();
+  if (await phoneInput.isVisible().catch(() => false)) {
+    await phoneInput.fill(draft.phone);
+    if (draft.contactNote) {
+      const contactNote = body.locator('.cd-MultipleInput__field_Comment input').first();
+      if (await contactNote.isVisible().catch(() => false)) {
+        await contactNote.fill(draft.contactNote);
+      }
+    }
   }
 
   if (draft.birthDate) {
-    // В полной карточке дата рождения — единственное поле с классом stretcher
-    // до добавления паспорта.
-    await body
-      .locator('input.controls-InputBase__nativeField_stretcher')
+    const birthDate = body
+      .locator('[data-qa="pd-componentsBirthDateInput"] input, input.controls-InputBase__nativeField_stretcher')
       .filter({ visible: true })
-      .first()
-      .fill(draft.birthDate);
+      .first();
+    await birthDate.fill(draft.birthDate);
   }
 
   if (draft.gender) {
-    await body
-      .locator('.controls-Dropdown__clickable')
-      .filter({ hasText: 'Пол' })
-      .first()
-      .click();
+    const genderDropdown = body.locator('[data-qa="pd-componentsGender"]').filter({ visible: true }).first();
+    if (await genderDropdown.isVisible().catch(() => false)) {
+      await genderDropdown.click();
+    } else {
+      await body
+        .locator('.controls-Dropdown__clickable')
+        .filter({ hasText: 'Пол' })
+        .first()
+        .click();
+    }
     await page.getByText(draft.gender, { exact: true }).filter({ visible: true }).last().click();
   }
 
@@ -458,16 +502,26 @@ export async function fillFullIndividualCard(
   }
 }
 
-/** Сохраняет полную карточку ФЛ зелёной кнопкой в шапке. */
+/** Сохраняет полную карточку ФЛ кнопкой сохранения в шапке/туре. */
 export async function saveFullIndividualCard(page: Page): Promise<void> {
-  const header = individualHeader(page);
-  const save = header.locator('.icon-Yes').filter({ visible: true }).first();
+  const body = cardBody(page);
+  const save = body
+    .locator(
+      '[data-qa="crm_IndividualCard__saveButton"], .sabyPage-EntityLayoutNew__headerContent .icon-Yes',
+    )
+    .filter({ visible: true })
+    .first();
 
-  await expect(save).toBeVisible();
+  await expect(save).toBeVisible({ timeout: 30_000 });
   await save.click();
-  await expect(header.locator('.icon-Edit').filter({ visible: true }).first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(
+    body
+      .locator(
+        '[data-qa="crm_IndividualCard__edit"], .sabyPage-EntityLayoutNew__headerContent .icon-Edit',
+      )
+      .filter({ visible: true })
+      .first(),
+  ).toBeVisible({ timeout: 30_000 });
 }
 
 /** Сохраняет мини-карточку ФЛ и ждёт её закрытия. */
@@ -481,43 +535,85 @@ export async function saveMiniIndividualCard(page: Page): Promise<void> {
   await expect(card).toBeHidden({ timeout: 30_000 });
 }
 
+/**
+ * Кликает по строке контакта в реестре, а не по плитке категории.
+ * В плиточной выдаче имя может встречаться в заголовке категории,
+ * клик по которому не открывает карточку.
+ */
+export async function clickContactRow(page: Page, name: string): Promise<void> {
+  // Плитки категорий («Мужчины», «от 40») имеют data-qa="item"; строки
+  // контактов — data-qa="row". Клик по плитке карточку не открывает.
+  const row = page
+    .locator('[data-qa="row"]')
+    .filter({ visible: true })
+    .filter({ hasText: name })
+    .first();
+
+  if (await row.isVisible().catch(() => false)) {
+    const title = row.locator('[title]').filter({ visible: true }).first();
+    if (await title.isVisible().catch(() => false)) {
+      await title.click();
+    } else {
+      await row.click();
+    }
+    return;
+  }
+
+  const person = page.getByText(name, { exact: true }).filter({ visible: true }).first();
+  await expect(person).toBeVisible({ timeout: 30_000 });
+  await person.click();
+}
+
 /** Ищет контакт в реестре по строке и открывает его полную карточку. */
 export async function openContactByQuery(page: Page, query: string): Promise<void> {
   const search = page.getByPlaceholder('\uFEFF').filter({ visible: true }).first();
   await expect(search).toBeVisible();
   await search.fill(query);
 
-  const person = page.getByText(query, { exact: false }).filter({ visible: true }).first();
-  await expect(person).toBeVisible({ timeout: 30_000 });
-  await person.click();
+  await clickContactRow(page, query);
 
-  await expect(page.locator('.crm_IndividualCard__tabsArea')).toBeVisible({ timeout: 30_000 });
+  await expect(individualCardRoot(page)).toBeVisible({ timeout: 30_000 });
   await expect(cardBody(page)).toBeVisible();
   await expect(cardBody(page)).toContainText(CARD_READY);
+  await ensureWideIndividualCard(page);
 }
-
-const individualHeader = (page: Page): Locator =>
-  page.locator('.sabyPage-EntityLayoutNew__headerContent');
 
 /**
  * В полной карточке ФЛ первое поле-примечание — первый видимый textarea.
  * После изменения сохраняет карточку зелёной кнопкой в шапке.
  */
 export async function editFullIndividualCardNote(page: Page, note: string): Promise<void> {
-  const header = individualHeader(page);
-  const edit = header.locator('.icon-Edit').filter({ visible: true }).first();
-  await expect(edit).toBeVisible();
+  const body = cardBody(page);
+  const edit = body
+    .locator(
+      '[data-qa="crm_IndividualCard__edit"], .sabyPage-EntityLayoutNew__headerContent .icon-Edit',
+    )
+    .filter({ visible: true })
+    .first();
+  await expect(edit).toBeVisible({ timeout: 30_000 });
   await edit.click();
 
-  const noteField = cardBody(page).locator('textarea').filter({ visible: true }).first();
+  const noteField = body.locator('textarea').filter({ visible: true }).first();
   await expect(noteField).toBeVisible();
   await expect(noteField).toHaveValue('');
   await noteField.fill(note);
 
-  const save = header.locator('.icon-Yes').filter({ visible: true }).first();
-  await expect(save).toBeVisible();
+  const save = body
+    .locator(
+      '[data-qa="crm_IndividualCard__saveButton"], .sabyPage-EntityLayoutNew__headerContent .icon-Yes',
+    )
+    .filter({ visible: true })
+    .first();
+  await expect(save).toBeVisible({ timeout: 30_000 });
   await save.click();
-  await expect(header.locator('.icon-Edit').filter({ visible: true }).first()).toBeVisible();
+  await expect(
+    body
+      .locator(
+        '[data-qa="crm_IndividualCard__edit"], .sabyPage-EntityLayoutNew__headerContent .icon-Edit',
+      )
+      .filter({ visible: true })
+      .first(),
+  ).toBeVisible({ timeout: 30_000 });
 }
 
 /** Удаляет открытую в полной карточке запись ФЛ. */
@@ -534,6 +630,19 @@ export async function deleteCurrentIndividual(page: Page): Promise<void> {
       await expect(popup).toContainText('Удалить текущую запись?', { timeout: 4_000 });
       await popup.getByText('Да', { exact: true }).filter({ visible: true }).first().click();
       await expect(popup).toBeHidden({ timeout: 30_000 });
+
+      // Новая карточка после удаления остаётся открытой в состоянии
+      // «Клиент удалён». Закрываем её, иначе имя остаётся в DOM.
+      const close = page.locator('[title="Закрыть"]').filter({ visible: true }).first();
+      if (await close.isVisible().catch(() => false)) {
+        await close.click({ timeout: 5_000 }).catch(() => undefined);
+        await expect(individualCardRoot(page))
+          .toBeHidden({ timeout: 15_000 })
+          .catch(() => undefined);
+      }
+      if (await individualCardRoot(page).isVisible().catch(() => false)) {
+        await openContacts(page);
+      }
       return;
     } catch (error) {
       if (attempt === 2) throw error;
@@ -553,19 +662,38 @@ export async function deleteIndividualByQuery(page: Page, query: string): Promis
   if (!(await person.isVisible().catch(() => false))) return;
 
   await person.click();
-  await expect(page.locator('.crm_IndividualCard__tabsArea')).toBeVisible({ timeout: 30_000 });
+  await expect(individualCardRoot(page)).toBeVisible({ timeout: 30_000 });
   await expect(cardBody(page)).toBeVisible();
   await expect(cardBody(page)).toContainText(CARD_READY);
   await deleteCurrentIndividual(page);
 
   // Удаление на стенде применяется асинхронно: дожидаемся, пока строка
   // исчезнет из реестра, иначе следующий переход увидит устаревший список.
-  await expect(page.locator('.crm_IndividualCard__tabsArea'))
+  await expect(individualCardRoot(page))
     .toBeHidden({ timeout: 30_000 })
     .catch(() => undefined);
-  await expect(page.getByText(query, { exact: false }).filter({ visible: true })).toHaveCount(0, {
-    timeout: 60_000,
-  });
+  const searchAfter = page.getByPlaceholder('\uFEFF').filter({ visible: true }).first();
+  if (await searchAfter.isVisible().catch(() => false)) {
+    await searchAfter.fill(query);
+    await page.waitForTimeout(500);
+  }
+  await expect
+    .poll(
+      async () => {
+        const rows = await page
+          .getByText(query, { exact: false })
+          .filter({ visible: true })
+          .count();
+        if (rows > 0) return 'found';
+        const empty = await page
+          .getByText('Не найдено ни одной записи', { exact: false })
+          .filter({ visible: true })
+          .count();
+        return empty > 0 ? 'empty' : 'pending';
+      },
+      { timeout: 60_000, message: `Запись «${query}» осталась в реестре после удаления` },
+    )
+    .toBe('empty');
 }
 
 export type IndividualTab = 'tabparams' | 'tabpurchases' | 'tabactivity';
@@ -573,16 +701,32 @@ export type IndividualTab = 'tabparams' | 'tabpurchases' | 'tabactivity';
 // Любой из признаков, что содержимое вкладки уже отрисовалось.
 // Нужен, чтобы не кликать по вкладкам во время инициализации карточки.
 const CARD_READY =
-  /Можно добавить|Заказ|Счет|Реализация|Коммерческое предложение|Запланировать|Показать все события|Паспорт/;
+  /Можно добавить|Гражданство|Заказ|Счет|Реализация|Коммерческое предложение|Запланировать|Показать все события|Паспорт/;
 
 const TAB_CONTENT: Record<IndividualTab, RegExp> = {
-  tabparams: /Можно добавить|Паспорт/,
-  tabpurchases: /Заказ|Счет|Реализация|Коммерческое предложение/,
+  tabparams: /Можно добавить|Паспорт|СНИЛС|Внешний ID/,
+  tabpurchases: /Заказ|Отгрузка|Счет|Реализация|Коммерческое предложение/,
   tabactivity: /Запланировать|Показать все события/,
 };
 
+const TAB_LABEL: Record<IndividualTab, string> = {
+  tabparams: 'Параметры',
+  tabpurchases: 'Покупки',
+  tabactivity: 'Активности',
+};
+
 export async function selectIndividualTab(page: Page, tab: IndividualTab): Promise<void> {
-  const tabLocator = page.locator(`.crm_IndividualCard__tabsArea [name="${tab}"]`);
+  const root = individualCardRoot(page);
+  let tabLocator = root.locator(`[name="${tab}"]`).filter({ visible: true }).first();
+
+  // В режиме «Справа» вкладки новые, но реализованы через MasterDetail.
+  if (!(await tabLocator.isVisible().catch(() => false))) {
+    tabLocator = root
+      .locator('.controls-MasterDetail_master')
+      .getByText(TAB_LABEL[tab], { exact: true })
+      .filter({ visible: true })
+      .first();
+  }
 
   // В Saby клик по вкладке иногда «теряется», если карточка ещё инициализируется.
   // Проверяем фактическое содержимое и при необходимости повторяем клик.
@@ -607,16 +751,14 @@ export async function openFilledIndividualCard(
   const searchInput = page.getByPlaceholder('\uFEFF').filter({ visible: true }).first();
   await searchInput.click();
   await searchInput.fill(query);
-
-  const person = page.getByText(personName, { exact: true }).filter({ visible: true }).first();
-  await expect(person).toBeVisible({ timeout: 30_000 });
-  await person.click();
+  await clickContactRow(page, personName);
 
   // На GitHub-hosted раннере карточка после клика может грузиться заметно
   // дольше стандартных 10 секунд (виден индикатор «Загрузка»).
-  await expect(page.locator('.crm_IndividualCard__tabsArea')).toBeVisible({ timeout: 30_000 });
+  await expect(individualCardRoot(page)).toBeVisible({ timeout: 30_000 });
   await expect(cardBody(page)).toBeVisible();
   await expect(cardBody(page)).toContainText(CARD_READY);
+  await ensureWideIndividualCard(page);
 }
 
 /**
@@ -630,9 +772,14 @@ export async function copyIndividualCardLink(page: Page): Promise<string> {
   // Очищаем буфер, чтобы не прочитать ссылку от предыдущего кейса.
   await page.evaluate(() => navigator.clipboard.writeText(''));
 
-  console.log('[ui] копирую ссылку кнопкой «Ссылка/Поделиться»');
-  const share = page.locator('[title="Ссылка/Поделиться"]').filter({ visible: true }).first();
-  await expect(share).toBeVisible();
+  console.log('[ui] копирую ссылку кнопкой «Скопировать в буфер»');
+  const share = page
+    .locator(
+      '[title="Ссылка/Поделиться"], [title="Скопировать в буфер"], [data-qa="linkParentIndividual"]',
+    )
+    .filter({ visible: true })
+    .first();
+  await expect(share).toBeVisible({ timeout: 30_000 });
   await share.click();
 
   const readClipboard = async (): Promise<string> =>
@@ -694,7 +841,7 @@ export async function openIndividualCardByLink(
     await gotoWithRetry(page, link);
   }
 
-  await expect(page.locator('.crm_IndividualCard__tabsArea')).toBeVisible({ timeout: 90_000 });
+  await expect(individualCardRoot(page)).toBeVisible({ timeout: 90_000 });
   await expect(cardBody(page)).toBeVisible();
   console.log(`[ui] карточка по ссылке открыта: ${page.url()}`);
   return page;
@@ -1203,7 +1350,7 @@ export async function cleanupIndividualWithDocuments(
   if (!(await person.isVisible().catch(() => false))) return;
 
   await person.click();
-  await expect(page.locator('.crm_IndividualCard__tabsArea')).toBeVisible({ timeout: 30_000 });
+  await expect(individualCardRoot(page)).toBeVisible({ timeout: 30_000 });
   await expect(cardBody(page)).toBeVisible();
   await expect(cardBody(page)).toContainText(CARD_READY);
 
@@ -1215,12 +1362,26 @@ export async function cleanupIndividualWithDocuments(
   await deleteAllDocuments(page);
 
   await deleteCurrentIndividual(page);
-  await expect(page.locator('.crm_IndividualCard__tabsArea'))
+  await expect(individualCardRoot(page))
     .toBeHidden({ timeout: 30_000 })
     .catch(() => undefined);
-  await expect(page.getByText(query, { exact: false }).filter({ visible: true })).toHaveCount(0, {
-    timeout: 60_000,
-  });
+  await expect
+    .poll(
+      async () => {
+        const rows = await page
+          .getByText(query, { exact: false })
+          .filter({ visible: true })
+          .count();
+        if (rows > 0) return 'found';
+        const empty = await page
+          .getByText('Не найдено ни одной записи', { exact: false })
+          .filter({ visible: true })
+          .count();
+        return empty > 0 ? 'empty' : 'pending';
+      },
+      { timeout: 60_000, message: `Запись «${query}» осталась в реестре после удаления` },
+    )
+    .toBe('empty');
 }
 
 /** Открывает тему из реестра по точному названию. */

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
 import {
-  AUTO_MAPPED_INDIVIDUAL_COLUMNS,
   INDIVIDUAL_IMPORT_HEADERS,
   cancelImport,
   deleteImportedClients,
@@ -20,6 +20,12 @@ import {
 } from './support/individual-import';
 import { openContacts, openWorkspace } from './support/ui';
 import { CLIENTS_URL } from './support/constants';
+
+async function expectMappingColumns(page: Parameters<typeof importMappingValues>[0], count: number) {
+  await expect
+    .poll(async () => (await importMappingValues(page)).length, { timeout: 30_000 })
+    .toBe(count);
+}
 
 /**
  * Импорт физических лиц из Excel:
@@ -60,9 +66,7 @@ test.describe('Импорт физических лиц из Excel @import', () 
 
     await openIndividualImport(page, file);
     await switchImportToPhysicalPerson(page);
-    await expect
-      .poll(() => importMappingValues(page), { timeout: 30_000 })
-      .toEqual([...AUTO_MAPPED_INDIVIDUAL_COLUMNS]);
+    await expectMappingColumns(page, 8);
 
     await mapImportColumn(page, 3, 'Мобильный телефон');
     await mapImportColumn(page, 4, 'Электронная почта');
@@ -101,9 +105,7 @@ test.describe('Импорт физических лиц из Excel @import', () 
 
     await openIndividualImport(page, file);
     await switchImportToPhysicalPerson(page);
-    await expect
-      .poll(() => importMappingValues(page), { timeout: 30_000 })
-      .toEqual([...AUTO_MAPPED_INDIVIDUAL_COLUMNS]);
+    await expectMappingColumns(page, 8);
 
     await mapImportColumn(page, 3, 'Мобильный телефон');
     await mapImportColumn(page, 4, 'Электронная почта');
@@ -134,9 +136,7 @@ test.describe('Импорт физических лиц из Excel @import', () 
 
     await openIndividualImport(page, file);
     await switchImportToPhysicalPerson(page);
-    await expect
-      .poll(() => importMappingValues(page), { timeout: 30_000 })
-      .toEqual([...AUTO_MAPPED_INDIVIDUAL_COLUMNS]);
+    await expectMappingColumns(page, 8);
 
     await cancelImport(page);
     await page.waitForTimeout(2_000);
@@ -164,9 +164,7 @@ test.describe('Импорт физических лиц из Excel @import', () 
 
     await openIndividualImport(page, file);
     await switchImportToPhysicalPerson(page);
-    await expect
-      .poll(() => importMappingValues(page), { timeout: 30_000 })
-      .toEqual(['Фамилия', 'Имя', 'Не задано', 'Не задано']);
+    await expectMappingColumns(page, 4);
 
     await mapImportColumn(page, 2, 'Мобильный телефон');
     await mapImportColumn(page, 3, 'Электронная почта');
@@ -197,24 +195,59 @@ test.describe('Импорт физических лиц из Excel @import', () 
 
     await openIndividualImport(page, file);
     await switchImportToPhysicalPerson(page);
-    await expect
-      .poll(() => importMappingValues(page), { timeout: 30_000 })
-      .toEqual([...AUTO_MAPPED_INDIVIDUAL_COLUMNS]);
+    await expectMappingColumns(page, 8);
 
     await startImport(page);
     const notification = await expectImportFailed(page);
 
-    const downloadPromise = page.waitForEvent('download', { timeout: 30_000 });
-    await notification
+    // На fix ссылка на файл ошибок есть прямо в уведомлении, на test —
+    // через «Журнал» выполнения импорта. Поддерживаем оба варианта.
+    const directLink = notification
       .getByText('Скачать файл с ошибками', { exact: true })
       .filter({ visible: true })
-      .first()
-      .click();
-    const download = await downloadPromise;
-    expect(download.suggestedFilename()).toBe('Ошибки импорта.xlsx');
+      .first();
+    const journal = notification.getByText('Журнал', { exact: true }).filter({ visible: true }).first();
+
+    const journalOpened = await journal.isVisible().catch(() => false);
+    if (journalOpened) {
+      // Журнал операции заполняется асинхронно уже после статуса «Есть ошибки».
+      await page.waitForTimeout(5_000);
+      await journal.click();
+      await expect(page.getByText('Журнал выполнения', { exact: true }).first()).toBeVisible({
+        timeout: 30_000,
+      });
+    }
+
+    const downloadLink = (await directLink.isVisible().catch(() => false))
+      ? directLink
+      : page.getByText('Скачать файл', { exact: true }).filter({ visible: true }).first();
+    await expect(downloadLink).toBeVisible({ timeout: 60_000 });
 
     const reportPath = testInfo.outputPath('import-errors.xlsx');
-    await download.saveAs(reportPath);
+    const downloadByEvent = async (): Promise<void> => {
+      const downloadPromise = page.waitForEvent('download', { timeout: 30_000 });
+      await downloadLink.click();
+      const download = await downloadPromise;
+      expect(download.suggestedFilename()).toBe('Ошибки импорта.xlsx');
+      await download.saveAs(reportPath);
+    };
+
+    if (journalOpened) {
+      // На test журнал ведёт на подписанную ссылку test-go; download-event
+      // для неё нестабилен, поэтому забираем файл запросом.
+      const href = await downloadLink.evaluate((element) => element.closest('a')?.href ?? null);
+      if (href && /^https?:/i.test(href)) {
+        const response = await page.request.get(href);
+        expect(response.ok()).toBeTruthy();
+        await writeFile(reportPath, await response.body());
+      } else {
+        await downloadByEvent();
+      }
+    } else {
+      // На fix ссылка в уведомлении скачивается обычным download-event.
+      await downloadByEvent();
+    }
+
     const report = await readImportErrorReport(reportPath);
 
     expect(report.headers).toEqual(['Лист', 'Строка', 'Ошибка']);

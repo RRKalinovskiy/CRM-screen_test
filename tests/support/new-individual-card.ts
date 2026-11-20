@@ -2,6 +2,7 @@ import { expect, type BrowserContext, type Locator, type Page } from '@playwrigh
 import { login } from './auth';
 import { CONTACTS_URL, SSO_HOST } from './constants';
 import {
+  clickContactRow,
   createEmptyIndividualCard,
   dismissNotifications,
   gotoWithRetry,
@@ -9,7 +10,7 @@ import {
   workspace,
 } from './ui';
 
-export const NEW_CARD_PERSON = 'Проверка Карточки Физика';
+export const NEW_CARD_PERSON = 'Сизов Виктор Генадьевич';
 
 export const NEW_CARD_MODES = ['В строку', 'Справа', 'Колонки'] as const;
 export type NewCardMode = (typeof NEW_CARD_MODES)[number];
@@ -46,11 +47,11 @@ const TAB_NAME: Record<NewCardTab, string> = {
 };
 
 const TAB_CONTENT: Record<NewCardTab, RegExp> = {
-  'О клиенте': /СНИЛС|Гражданство/,
-  Параметры: /СНИЛС|Можно добавить|Внешний ID/,
+  'О клиенте': /СНИЛС|Гражданство|Позвонить/,
+  Параметры: /СНИЛС|Можно добавить|Внешний ID|Паспорт|Гражданство/,
   Документы: /Добавьте необходимые файлы/,
-  Активности: /Фиксация активности|Запланировать/,
-  Покупки: /Счет|Заказ/,
+  Активности: /Фиксация активности|Запланировать|Показать все события/,
+  Покупки: /Счет|Заказ|Отгрузка/,
   Чаты: /Чтобы начать общаться|Обсудите с клиентом/,
 };
 
@@ -89,9 +90,7 @@ export async function openNewCardForPerson(
   personName = NEW_CARD_PERSON,
 ): Promise<void> {
   await openContactsForNewCard(page);
-  const person = page.getByText(personName, { exact: true }).filter({ visible: true }).first();
-  await expect(person).toBeVisible({ timeout: 30_000 });
-  await person.click();
+  await clickContactRow(page, personName);
   await expect(newCardRoot(page)).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.crm_IndividualCardNew__name')).toContainText(personName);
 }
@@ -320,28 +319,28 @@ export async function reopenNewCard(
   let person = page.getByText(personName, { exact: true }).filter({ visible: true }).first();
   if (!(await person.isVisible().catch(() => false))) {
     await openContactsForNewCard(page);
-    person = page.getByText(personName, { exact: true }).filter({ visible: true }).first();
   }
 
-  await expect(person).toBeVisible({ timeout: 30_000 });
-  await person.click();
+  await clickContactRow(page, personName);
   await expect(newCardRoot(page)).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.crm_IndividualCardNew__name')).toContainText(personName);
 }
 
-/** Проверяет ключевые данные заполненной карточки «Проверка Карточки Физика». */
+/** Проверяет ключевые данные заполненной карточки демо-клиента Сизова. */
 export async function expectFilledNewCardData(page: Page): Promise<void> {
   const root = newCardRoot(page);
   for (const value of [
     NEW_CARD_PERSON,
-    '+7 (953) 647-58-58',
-    'test@yandex.ru',
-    '29.01.2000',
+    '+7 (953) 648-57-58',
+    'vorota-siz.ru',
+    '12.05.1976',
     'Ярославская обл., Мышкинский р-н, д. Кологривцево',
-    '583-613-036 94',
-    '180189810730',
-    '12 45',
-    '152536',
+    'г. Кострома',
+    'Россия',
+    '12 05',
+    '125001',
+    '25.08.21',
+    '440-013',
   ]) {
     await expect(root).toContainText(value);
   }

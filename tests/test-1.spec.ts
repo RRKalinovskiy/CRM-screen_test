@@ -11,6 +11,7 @@ import {
   selectIndividualTab,
   type IndividualTab,
 } from './support/ui';
+import { selectNewCardMode } from './support/new-individual-card';
 
 test.describe('Карточка физического лица', () => {
   test.beforeEach(async ({ page }) => {
@@ -44,6 +45,9 @@ test.describe('Карточка физического лица', () => {
     test(title, async ({ page }) => {
       await createEmptyIndividualCard(page);
       await openFullIndividualCard(page);
+      // Режим карточки — общее состояние пользователя: фиксируем его,
+      // чтобы эталон не зависел от порядка тестов и test-14.
+      await selectNewCardMode(page, 'Колонки');
       await selectIndividualTab(page, tab);
       await expectCardScreenshot(page, snapshot);
     });
@@ -51,12 +55,17 @@ test.describe('Карточка физического лица', () => {
 
   test('Заполненная карточка ФЛ', async ({ page }) => {
     await openFilledIndividualCard(page, 'Сизов', 'Сизов Виктор Генадьевич');
+    await selectNewCardMode(page, 'Колонки');
     await selectIndividualTab(page, 'tabparams');
     await expectCardScreenshot(page, 'crm-individual-card-Карточка ФЛ.png');
   });
 });
 
 test('Заполненная визитка ФЛ', async ({ page }) => {
+  test.skip(
+    true,
+    'На стенде test нет договоров займа/кредита, из которых открывается визитка Сизова',
+  );
   await openBusinessCard(page);
   await expect(miniCardDialog(page)).toHaveScreenshot('crm-individual-card-Визитка ФЛ.png', {
     mask: [

@@ -3,6 +3,7 @@ import { EMPTY_STORAGE_STATE } from './support/constants';
 import {
   cardBody,
   deleteCurrentIndividual,
+  individualCardRoot,
   deleteIndividualByQuery,
   openContacts,
   workspace,
@@ -109,12 +110,12 @@ test.describe('Контактные лица — пустой пользоват
     ).toBeVisible();
 
     await page.getByText(lastName, { exact: false }).filter({ visible: true }).first().click();
-    await expect(page.locator('.crm_IndividualCard__tabsArea')).toBeVisible({ timeout: 30_000 });
+    await expect(individualCardRoot(page)).toBeVisible({ timeout: 30_000 });
     await expect(cardBody(page)).toContainText(lastName);
     await expect(cardBody(page)).toContainText('+7 (999) 123-45-67');
 
     await deleteCurrentIndividual(page);
-    await expect(page.locator('.crm_IndividualCard__tabsArea'))
+    await expect(individualCardRoot(page))
       .toBeHidden({ timeout: 30_000 })
       .catch(() => undefined);
     await expect(
