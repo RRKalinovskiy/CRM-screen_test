@@ -90,6 +90,13 @@ export async function openNewCardForPerson(
   personName = NEW_CARD_PERSON,
 ): Promise<void> {
   await openContactsForNewCard(page);
+
+  // Предыдущий сценарий мог оставить карточку открытой: в этом случае
+  // клик по строке реестра не открывает новую, а только выделяет контакт.
+  if (await newCardRoot(page).isVisible().catch(() => false)) {
+    await closeNewCard(page);
+  }
+
   await clickContactRow(page, personName);
   await expect(newCardRoot(page)).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.crm_IndividualCardNew__name')).toContainText(personName);

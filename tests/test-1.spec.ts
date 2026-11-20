@@ -62,10 +62,6 @@ test.describe('Карточка физического лица', () => {
 });
 
 test('Заполненная визитка ФЛ', async ({ page }) => {
-  test.skip(
-    true,
-    'На стенде test нет договоров займа/кредита, из которых открывается визитка Сизова',
-  );
   await openBusinessCard(page);
   await expect(miniCardDialog(page)).toHaveScreenshot('crm-individual-card-Визитка ФЛ.png', {
     mask: [

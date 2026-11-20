@@ -95,7 +95,7 @@ test.describe('Карточка ФЛ — функциональные прове
     await openFilledIndividualCard(page, 'Сизов', 'Сизов Виктор Генадьевич');
 
     await selectIndividualTab(page, 'tabpurchases');
-    await expect(cardBody(page)).toContainText('Отгрузка');
+    await expect(cardBody(page)).toContainText('Реализация');
 
     await selectIndividualTab(page, 'tabactivity');
     await expect(cardBody(page)).toContainText('Показать все события по клиенту');
@@ -106,10 +106,6 @@ test.describe('Карточка ФЛ — функциональные прове
 });
 
 test('Заполненная визитка показывает контакты, паспорт и действия', async ({ page }) => {
-  test.skip(
-    true,
-    'На стенде test нет договоров займа/кредита, из которых открывается визитка Сизова',
-  );
   await openBusinessCard(page);
   const card = miniCardDialog(page);
 
@@ -118,7 +114,7 @@ test('Заполненная визитка показывает контакт�
     await expect(card).toContainText(part);
   }
   await expect(card).toContainText('+7 (953) 648-57-58');
-  await expect(card).toContainText('vg.sizov76@yandex.ru');
+  await expect(card).toContainText('vorota-siz.ru');
   await expect(card.getByText('Паспорт', { exact: true })).toBeVisible();
   await expect(card.getByText('Место рождения', { exact: true })).toBeVisible();
   await expect(card.getByText('г. Кострома', { exact: true })).toBeVisible();

@@ -202,7 +202,7 @@ test.describe('Новая карточка ФЛ @new-card', () => {
   test('Плашка периода в продажах не перекрывает правый список', async ({ page }) => {
     test.skip(
       true,
-      'На стенде test у демо-клиента нет продаж, плашка периода не отображается',
+      'На стенде test каталог товаров пуст: продажу с суммой и плашкой периода создать нельзя',
     );
     test.setTimeout(180_000);
     await openNewCardForPerson(page);
@@ -259,10 +259,6 @@ test.describe('Новая карточка ФЛ @new-card', () => {
   });
 
   test('Не дублирует загрузку продаж при переключении режимов', async ({ page }) => {
-    test.skip(
-      true,
-      'На стенде test у демо-клиента нет продаж, запрос списка продаж не выполняется',
-    );
     test.setTimeout(240_000);
     const salesListRequests: string[] = [];
     page.on('request', (request) => {

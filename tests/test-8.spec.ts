@@ -9,9 +9,8 @@ const GROUPS = ['Продажи'];
 const THEME_ROWS = ['Продажа товаров и услуг'];
 
 const COUNTERS = [
-  { index: 0, status: 'Просроченные' },
-  { index: 1, status: 'В работе' },
-  { index: 2, status: 'Новый, Новые' },
+  { index: 0, status: 'В работе' },
+  { index: 1, status: 'Новый, Новые' },
 ];
 
 const themeRow = (page: Page): Locator =>
@@ -61,16 +60,31 @@ test.describe('Реестр «Темы»', () => {
     ).toBeVisible();
   });
 
+  test('Счётчик «Просроченные» открывает окно сделок', async ({ page }) => {
+    test.skip(
+      true,
+      'Saby не разрешает срок сделки раньше текущей даты, поэтому просроченную сделку на стенде не создать',
+    );
+    await openThemes(page);
+
+    const target = themeRow(page).locator('span.controls-DecoratorNumber').first();
+    await expect(target).toHaveText(/^\d+$/);
+    await target.click();
+
+    const popup = themeCounterPopup(page, 'Просроченные');
+    await expect(
+      popup.getByText(`${THEME_NAME}, Просроченные`, { exact: true }).first(),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(popup.getByText('Сделки', { exact: true }).first()).toBeVisible();
+    await popup.locator('[title="Закрыть"]').filter({ visible: true }).first().click();
+  });
+
   for (const counter of COUNTERS) {
     test(`Счётчик «${counter.status}» открывает окно сделок`, async ({ page }) => {
-      test.skip(
-        true,
-        'На стенде test у демо-темы нет счётчиков и сделок для окна',
-      );
       await openThemes(page);
 
       const counters = themeRow(page).locator('span.controls-DecoratorNumber');
-      await expect(counters).toHaveCount(3);
+      await expect(counters).toHaveCount(COUNTERS.length);
       const target = counters.nth(counter.index);
       await expect(target).toHaveText(/^\d+$/);
 
