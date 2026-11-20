@@ -1,8 +1,10 @@
-name: Playwright
+# Копия для стенда test.
+# test-sso.saby.ru доступен только из корпоративной сети/VPN: GitHub-hosted
+# раннер не резолвит этот домен. Запускать вручную на self-hosted Windows
+# раннере с доступом к стенду test.
+name: Playwright (test stand)
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 permissions:

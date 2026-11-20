@@ -19,6 +19,13 @@ $env:SABY_APP_ORIGIN='https://test-online.sbis.ru'
 $env:SABY_AUTH_URL='https://test-sso.saby.ru/auth-online/test-online.sbis.ru/?ret=test-online.sbis.ru/page/crm-unified-contacts'
 ```
 
+## CI
+
+`test-sso.saby.ru` не резолвится с GitHub-hosted раннеров. Workflow в этой
+ветке переведён в ручной запуск (`workflow_dispatch`) и требует self-hosted
+Windows-раннера с доступом к корпоративной сети/VPN. Для GitHub-hosted
+раннера нужен проброс DNS/VPN до стенда test.
+
 ## Запуск
 
 ```powershell
