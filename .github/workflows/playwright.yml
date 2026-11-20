@@ -102,6 +102,9 @@ jobs:
           retention-days: 14
 
   empty-contacts:
+    # На стенде test профиль «Пустой44» отсутствует, поэтому в копии
+    # для test-stand этот job отключён.
+    if: false
     name: Playwright — пустой пользователь (Windows)
     runs-on: windows-latest
     timeout-minutes: 20
