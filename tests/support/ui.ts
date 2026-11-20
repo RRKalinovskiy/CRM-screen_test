@@ -2,7 +2,7 @@ import { expect, type BrowserContext, type Locator, type Page } from '@playwrigh
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { login } from './auth';
-import { CONTACTS_URL, LOANS_URL, THEME_URL, THEMES_URL } from './constants';
+import { CONTACTS_URL, LOANS_URL, SSO_HOST, THEME_URL, THEMES_URL } from './constants';
 
 export const workspace = (page: Page): Locator =>
   page.locator('.sabyPage-MainLayout__workspaceWrapper');
@@ -38,7 +38,7 @@ export async function openWorkspace(page: Page, url: string): Promise<void> {
   console.log(`[ui] URL после навигации: ${page.url()}`);
 
   // Сессия могла истечь во время длинного прогона — повторно логинимся.
-  if (page.url().includes('fix-sso.saby.ru')) {
+  if (page.url().includes(SSO_HOST)) {
     console.warn('[ui] сессия истекла, повторный вход');
     await login(page);
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
@@ -688,7 +688,7 @@ export async function openIndividualCardByLink(
   const page = await context.newPage();
   await gotoWithRetry(page, link);
 
-  if (page.url().includes('fix-sso.saby.ru')) {
+  if (page.url().includes(SSO_HOST)) {
     console.warn('[ui] сессия истекла при открытии ссылки, повторный вход');
     await login(page);
     await gotoWithRetry(page, link);

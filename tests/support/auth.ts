@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { AUTH_URL, LOGIN, PASSWORD } from './constants';
+import { APP_HOST, AUTH_URL, LOGIN, PASSWORD } from './constants';
 
 export type Credentials = {
   login: string;
@@ -12,7 +12,7 @@ export type Credentials = {
  * На странице входа несколько controls-BaseButton (включая скрытые),
  * поэтому логин отправляем клавишей Enter, а пароль — кнопкой входа:
  * в SSO-форме Enter на шаге пароля не всегда запускает отправку.
- * После успешного входа Saby уводит на fix-online.sbis.ru.
+ * После успешного входа Saby уводит на APP_HOST (стенд test-online).
  */
 export async function login(
   page: Page,
@@ -55,6 +55,6 @@ export async function login(
     appWorkspace.waitFor({ state: 'visible', timeout: 90_000 }).catch(() => undefined),
   ]);
 
-  await page.waitForURL((url) => url.hostname === 'fix-online.sbis.ru', { timeout: 90_000 });
+  await page.waitForURL((url) => url.hostname === APP_HOST, { timeout: 90_000 });
   console.log(`[auth] после входа: ${page.url()}`);
 }

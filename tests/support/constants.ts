@@ -1,13 +1,20 @@
 import { resolve } from 'node:path';
 
-export const APP_ORIGIN = 'https://fix-online.sbis.ru';
+/**
+ * Копия suite для тестового стенда test-online.
+ * При необходимости стенд можно переопределить через env.
+ */
+export const APP_ORIGIN = process.env.SABY_APP_ORIGIN ?? 'https://test-online.sbis.ru';
+export const APP_HOST = new URL(APP_ORIGIN).hostname;
 
 /**
  * SSO-страница, на которой всегда показывается форма входа.
- * После успешного входа Saby уводит на fix-online.sbis.ru.
+ * После успешного входа Saby уводит на APP_HOST.
  */
 export const AUTH_URL =
-  'https://fix-sso.saby.ru/auth-online/fix-online.sbis.ru/?ret=fix-online.sbis.ru/page/crm-unified-contacts';
+  process.env.SABY_AUTH_URL ??
+  'https://test-sso.saby.ru/auth-online/test-online.sbis.ru/?ret=test-online.sbis.ru/page/crm-unified-contacts';
+export const SSO_HOST = new URL(AUTH_URL).hostname;
 
 export const CONTACTS_URL = `${APP_ORIGIN}/page/crm-unified-contacts`;
 export const CLIENTS_URL = `${APP_ORIGIN}/page/crm-clients`;

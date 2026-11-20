@@ -62,7 +62,10 @@ export default async function globalSetup(): Promise<void> {
   // CI запускает основной набор и сценарии пустого пользователя разными
   // job'ами: каждому нужна только его сессия.
   const setupMain = process.env.SABY_SETUP_MAIN !== '0';
-  const setupEmpty = process.env.SABY_SETUP_EMPTY !== '0';
+  // На стенде test профиль «Пустой44» отсутствует. По умолчанию в этой копии
+  // логинимся только основным пользователем; включить пустого:
+  // SABY_SETUP_EMPTY=1 (если профиль создан на стенде).
+  const setupEmpty = process.env.SABY_SETUP_EMPTY === '1';
 
   if (setupMain) {
     await saveStorageState({

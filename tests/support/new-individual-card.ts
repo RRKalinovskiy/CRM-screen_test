@@ -1,6 +1,6 @@
 import { expect, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { login } from './auth';
-import { CONTACTS_URL } from './constants';
+import { CONTACTS_URL, SSO_HOST } from './constants';
 import {
   createEmptyIndividualCard,
   dismissNotifications,
@@ -73,7 +73,7 @@ export async function openContactsForNewCard(page: Page): Promise<void> {
   console.log(`[new-card] открываю: ${CONTACTS_URL}`);
   await gotoWithRetry(page, CONTACTS_URL);
 
-  if (page.url().includes('fix-sso.saby.ru')) {
+  if (page.url().includes(SSO_HOST)) {
     console.warn('[new-card] сессия истекла, повторный вход');
     await login(page);
     await gotoWithRetry(page, CONTACTS_URL);
@@ -105,7 +105,7 @@ export async function openNewCardByLink(
   const page = await context.newPage();
   await gotoWithRetry(page, link);
 
-  if (page.url().includes('fix-sso.saby.ru')) {
+  if (page.url().includes(SSO_HOST)) {
     console.warn('[new-card] сессия истекла при открытии ссылки, повторный вход');
     await login(page);
     await gotoWithRetry(page, link);
