@@ -334,9 +334,10 @@ export async function ensureWideIndividualCard(page: Page): Promise<void> {
 /** Из мини-карточки открывает полную карточку ФЛ. */
 export async function openFullIndividualCard(page: Page): Promise<void> {
   await page.getByTitle('Перейти в подробную карточку').click();
-  await expect(individualCardRoot(page)).toBeVisible();
-  await expect(cardBody(page)).toBeVisible();
-  await expect(cardBody(page)).toContainText(CARD_READY);
+  // На стенде test карточка после перехода может грузиться дольше 10 секунд.
+  await expect(individualCardRoot(page)).toBeVisible({ timeout: 30_000 });
+  await expect(cardBody(page)).toBeVisible({ timeout: 30_000 });
+  await expect(cardBody(page)).toContainText(CARD_READY, { timeout: 30_000 });
   await ensureWideIndividualCard(page);
 }
 
